@@ -645,7 +645,7 @@ class AirWindow(Gtk.ApplicationWindow):
         if status in ('no_route','disconnected'):text='Ping · offline'
         signal=data.get('signal_percent')
         connection=data.get('connection')
-        if connection=='wlan':text+=' · WLAN '+('—' if signal is None else f'{signal:.0f}')+' %'
+        if connection=='wlan':text+=' · WLAN-Signal '+('—' if signal is None else f'{signal:.0f}')+' %'
         elif connection=='ethernet':text+=' · LAN'
         elif connection=='vpn':text+=' · VPN'
         self.mini_ping.set_text(text)

@@ -17,7 +17,7 @@ Gerätewechsel. Beide Widgets teilen sich einen Prozess und das Tray-Symbol.
 
 Die Abbildungen zeigen die echte Oberfläche mit Beispielwerten.
 
-[Download Version 1.1.0](https://github.com/jurkast/restlos-air/releases/tag/v1.1.0)
+[Download Version 1.1.1](https://github.com/jurkast/restlos-air/releases/tag/v1.1.1)
 · [Fehler melden](https://github.com/jurkast/restlos-air/issues)
 
 ## Funktionen
@@ -65,12 +65,12 @@ benötigt NetworkManager mit `nmcli`; ohne diesen Dienst bleiben Ping und Datenr
    einrichten. Sein Dienst muss die Hardware erkennen. Restlos Air richtet selbst
    kein fremdes Paketrepository ein.
 2. Das `.deb` und die `.deb.sha256` von der
-   [Release-Seite](https://github.com/jurkast/restlos-air/releases/tag/v1.1.0) herunterladen.
+   [Release-Seite](https://github.com/jurkast/restlos-air/releases/tag/v1.1.1) herunterladen.
 3. Im Downloadordner prüfen und installieren:
 
 ```bash
-sha256sum -c restlos-air_1.1.0_all.deb.sha256
-sudo apt install ./restlos-air_1.1.0_all.deb
+sha256sum -c restlos-air_1.1.1_all.deb.sha256
+sudo apt install ./restlos-air_1.1.1_all.deb
 restlos-air
 ```
 

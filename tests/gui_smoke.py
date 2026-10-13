@@ -233,7 +233,7 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertIn('RAM 8.0/32.0 GiB', self.window.mini_memory.get_text())
         self.window.update_network({'internet_ms': 20, 'gateway_ms': 2, 'internet_status': 'ok',
             'signal_percent': 65, 'connection': 'wlan', 'rx_bytes_sec': 2*1024**2, 'tx_bytes_sec': 1024})
-        self.assertIn('WLAN 65 %', self.window.mini_ping.get_text())
+        self.assertIn('WLAN-Signal 65 %', self.window.mini_ping.get_text())
         self.assertEqual(self.window.mini_transfer.get_text(), '↓ 2.0 MiB/s   ·   ↑ 1 KiB/s')
         self.window.metrics_state={};self.window.update_metrics()
         self.assertIn('CPU — %', self.window.mini_load.get_text())

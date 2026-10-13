@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.1.1 – 2026-10-13
+
+- WLAN-Prozentwert eindeutig als „WLAN-Signal“ beschriftet.
+
 ## 1.1.0 – 2026-10-13
 
 - CPU-/GPU-Auslastung sowie RAM- und Grafikspeicherverbrauch in Widget und Studio.
