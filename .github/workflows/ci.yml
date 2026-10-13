@@ -1,0 +1,38 @@
+name: Tests and Debian build
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install native test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            python3 python3-gi python3-cairo python3-gi-cairo \
+            gir1.2-gtk-3.0 gir1.2-secret-1 dbus xvfb xauth dpkg-dev
+
+      - name: Hardware-free unit tests
+        run: /usr/bin/python3 -m unittest discover -s tests -p 'test_*.py' -v
+
+      - name: Headless native GUI tests
+        run: dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/gui_smoke.py
+
+      - name: Build Debian package
+        run: /usr/bin/python3 scripts/build_deb.py

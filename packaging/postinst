@@ -1,0 +1,40 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        had_nct=0
+        for name_file in /sys/class/hwmon/hwmon*/name; do
+            [ -r "$name_file" ] || continue
+            case "$(cat "$name_file")" in nct*) had_nct=1 ;; esac
+        done
+        # Loading the sensor driver does not write a fan speed or a fan curve.
+        if command -v modprobe >/dev/null 2>&1; then
+            modprobe nct6775 || true
+        fi
+        has_nct=0
+        for name_file in /sys/class/hwmon/hwmon*/name; do
+            [ -r "$name_file" ] || continue
+            case "$(cat "$name_file")" in nct*) has_nct=1 ;; esac
+        done
+        if [ -d /run/systemd/system ]; then
+            systemctl enable coolercontrold.service >/dev/null 2>&1 || true
+            if systemctl is-active --quiet coolercontrold.service; then
+                # An already running daemon did not enumerate a newly appeared
+                # NCT device. Leave it running unchanged on normal upgrades.
+                if [ "$had_nct" = 0 ] && [ "$has_nct" = 1 ]; then
+                    systemctl restart --no-block coolercontrold.service
+                fi
+            else
+                systemctl start --no-block coolercontrold.service
+            fi
+        fi
+        if command -v update-desktop-database >/dev/null 2>&1; then
+            update-desktop-database /usr/share/applications || true
+        fi
+        if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+            gtk-update-icon-cache --force --ignore-theme-index /usr/share/icons/hicolor >/dev/null 2>&1 || true
+        fi
+        ;;
+esac
+exit 0

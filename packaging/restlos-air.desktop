@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Restlos Air
+Comment=Temperaturen, Lüftersteuerung und WLAN-Ping
+Exec=restlos-air
+Icon=restlos-air
+Terminal=false
+Categories=System;Monitor;
+StartupNotify=false
+StartupWMClass=Restlos Air Studio
+Keywords=fan;cooling;temperature;Lüfter;Temperatur;ping;

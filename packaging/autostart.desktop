@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Restlos Air
+Comment=Kompaktes Temperatur-Widget beim Anmelden öffnen
+Exec=restlos-air --compact
+Icon=restlos-air
+Terminal=false
+NoDisplay=true
+StartupNotify=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=5
