@@ -1,11 +1,11 @@
 Package: restlos-air
-Version: 1.0.1
+Version: 1.1.0
 Section: utils
 Priority: optional
 Architecture: all
 Maintainer: jurkast <312310339+jurkast@users.noreply.github.com>
 Homepage: https://github.com/jurkast/restlos-air
-Depends: python3 (>= 3.10), python3-gi, python3-cairo, python3-gi-cairo, gir1.2-gtk-3.0, gir1.2-secret-1, gir1.2-ayatanaappindicator3-0.1, iputils-ping, iproute2, coolercontrold (>= 5.0.1)
+Depends: python3 (>= 3.10), python3-gi, python3-cairo, python3-gi-cairo, gir1.2-gtk-3.0, gir1.2-secret-1, gir1.2-ayatanaappindicator3-0.1, iputils-ping, iproute2, pulseaudio-utils, coolercontrold (>= 5.0.1)
 Description: Native cooling controls and gaming widget for Linux
  Restlos Air combines local hardware temperatures, fan controls through the
  existing CoolerControl daemon, and a compact desktop widget with a tray icon.

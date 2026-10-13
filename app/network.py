@@ -9,6 +9,7 @@ from collections import deque
 import ipaddress
 import json
 import logging
+import math
 import os
 from pathlib import Path
 import re
@@ -110,6 +111,51 @@ def discover_route(sys_root=Path("/sys/class/net"),
     return route
 
 
+def traffic_counters(interface, sys_root=Path("/sys/class/net")):
+    """Read byte counters for one validated interface without extra processes."""
+    if not _valid_interface(interface):
+        return None
+    try:
+        stats = Path(sys_root) / interface / "statistics"
+        counters = tuple(int((stats / field).read_text().strip())
+                         for field in ("rx_bytes", "tx_bytes"))
+        if any(value < 0 or value > 2**64 - 1 for value in counters):
+            return None
+        return counters
+    except (OSError, ValueError):
+        return None
+
+
+def wifi_signal(interface):
+    """NetworkManager's cached signal percentage for the active AP, no scan.
+
+    Only IN-USE and SIGNAL are requested, so SSIDs and BSSIDs never enter the
+    monitor. Missing nmcli, an inactive interface or an ambiguous result yields
+    None. Signal percentage is not connection speed or packet delivery quality.
+    """
+    if not _valid_interface(interface):
+        return None
+    executable = shutil.which("nmcli")
+    if not executable:
+        return None
+    command = [executable, "-t", "-f", "IN-USE,SIGNAL", "device", "wifi", "list",
+               "--rescan", "no", "ifname", interface]
+    try:
+        response = subprocess.run(command, capture_output=True, text=True,
+                                  timeout=1, check=False,
+                                  env={**os.environ, "LC_ALL": "C"})
+        if response.returncode != 0:
+            return None
+        active = [line.partition(":")[2].strip() for line in response.stdout.splitlines()
+                  if line.partition(":")[0].strip() == "*"]
+        if len(active) != 1 or not re.fullmatch(r"[0-9]{1,3}", active[0]):
+            return None
+        signal = int(active[0])
+        return signal if 0 <= signal <= 100 else None
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
 def ping_once(target, executable=None):
     """One bounded probe. Returns (milliseconds or None, status, explanation)."""
     validate_target(target)
@@ -146,6 +192,10 @@ class NetworkMonitor:
     ``loss_percent`` is unanswered internet ICMP probes in ``samples`` recent
     attempts, not an estimate of all traffic loss. Route discovery is cached
     for thirty seconds; interface state is checked cheaply on every sample.
+    RX/TX rates average the bytes transferred on that interface between samples.
+    The first sample and counter discontinuities have no rate. WLAN signal is
+    NetworkManager's cached active-AP percentage, refreshed at most every fifteen
+    seconds without requesting a scan. All metrics use this existing worker.
     """
 
     def __init__(self, callback=None, interval=5.0, target="1.1.1.1",
@@ -158,6 +208,10 @@ class NetworkMonitor:
         self._route_at = 0.0
         self._results = deque(maxlen=12)
         self._latencies = deque(maxlen=12)
+        self._traffic_previous = None
+        self._signal_percent = None
+        self._signal_interface = None
+        self._signal_at = None
         self._stop = threading.Event()
         self._lock = threading.Lock()
         self._thread = None
@@ -169,6 +223,7 @@ class NetworkMonitor:
                 "status": status, "interface": None, "connection": "unknown",
                 "gateway": None, "internet_target": self.target,
                 "loss_percent": None, "samples": 0, "jitter_ms": None,
+                "signal_percent": None, "rx_bytes_sec": None, "tx_bytes_sec": None,
                 "detail": detail}
 
     def snapshot(self):
@@ -188,6 +243,41 @@ class NetworkMonitor:
         if self._thread and self._thread is not threading.current_thread():
             self._thread.join(timeout=join_timeout)
 
+    def _reset_link_metrics(self):
+        self._traffic_previous = None
+        self._signal_percent = None
+        self._signal_interface = None
+        self._signal_at = None
+
+    def _traffic_rates(self, interface, now):
+        counters = traffic_counters(interface, self.sys_root)
+        previous = self._traffic_previous
+        if counters is None:
+            self._traffic_previous = None
+            return None, None
+        self._traffic_previous = (interface, now, *counters)
+        if previous is None or previous[0] != interface:
+            return None, None
+        elapsed = now - previous[1]
+        differences = tuple(value - old for value, old in zip(counters, previous[2:]))
+        if not math.isfinite(elapsed) or elapsed <= 0 or any(value < 0 for value in differences):
+            return None, None
+        return tuple(value / elapsed for value in differences)
+
+    def _cached_signal(self, route, now):
+        if route["connection"] != "wlan":
+            self._signal_percent = None
+            self._signal_interface = None
+            self._signal_at = None
+            return None
+        interface = route["interface"]
+        if (self._signal_interface != interface or self._signal_at is None
+                or now - self._signal_at >= 15):
+            self._signal_percent = wifi_signal(interface)
+            self._signal_interface = interface
+            self._signal_at = now
+        return self._signal_percent
+
     def _sample(self):
         now = time.monotonic()
         if now - self._route_at >= 30 or self._route_at == 0:
@@ -199,10 +289,12 @@ class NetworkMonitor:
             if route != self._route:
                 self._results.clear()
                 self._latencies.clear()
+                self._reset_link_metrics()
             self._route = route
             self._route_at = now
         route = self._route
         if not route:
+            self._reset_link_metrics()
             return self._empty("no_route", "Keine Standardroute für dieses Ping-Ziel")
         result = self._empty("measuring", "")
         result.update({"interface": route["interface"], "connection": route["connection"],
@@ -215,8 +307,14 @@ class NetworkMonitor:
             self._route_at = 0.0
             self._results.clear()
             self._latencies.clear()
+            self._reset_link_metrics()
             result.update(status="disconnected", internet_status="disconnected",
                           gateway_status="disconnected", detail="Netzwerkverbindung ist getrennt")
+            return result
+        rx_bytes_sec, tx_bytes_sec = self._traffic_rates(route["interface"], now)
+        result.update(signal_percent=self._cached_signal(route, now),
+                      rx_bytes_sec=rx_bytes_sec, tx_bytes_sec=tx_bytes_sec)
+        if self._stop.is_set():
             return result
         if route["gateway"]:
             gateway_ms, gateway_status, _ = ping_once(route["gateway"])
@@ -246,6 +344,7 @@ class NetworkMonitor:
                 result = self._sample()
             except Exception:
                 LOG.exception("Network monitor could not sample")
+                self._reset_link_metrics()
                 result = self._empty("error", "Netzwerkmessung vorübergehend nicht verfügbar")
             if self._stop.is_set():
                 break

@@ -108,6 +108,11 @@ class GuiSmokeTests(unittest.TestCase):
         from gi.repository import Gtk, Gio, GLib
         cls.air, cls.Gtk, cls.Gio, cls.GLib = air_studio, Gtk, Gio, GLib
         cls.module_patches = [
+            patch.object(air_studio, 'MetricsSampler', return_value=type('FakeMetrics', (), {'sample': lambda self: {
+                'cpu_percent': 12, 'gpu_percent': 37, 'ram_used_bytes': 8*2**30,
+                'ram_total_bytes': 32*2**30, 'ram_percent': 25,
+                'vram_used_bytes': 4*2**30, 'vram_total_bytes': 16*2**30, 'vram_percent': 25,
+            }})()),
             patch.object(network, 'NetworkMonitor', QuietNetwork),
             patch.object(control, 'Controller', FakeController),
             patch.object(air_studio, 'secret_store', return_value='fake-test-token'),
@@ -222,6 +227,19 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertTrue(self.window.network.stopped)
         self.assertFalse(self.window.pump_done(2307))
         self.assertFalse(self.window.backend_done({}, None, None))
+
+    def test_load_memory_network_and_missing_values(self):
+        self.assertEqual(self.window.mini_load.get_text(), 'CPU 12 %   ·   GPU 37 %')
+        self.assertIn('RAM 8.0/32.0 GiB', self.window.mini_memory.get_text())
+        self.window.update_network({'internet_ms': 20, 'gateway_ms': 2, 'internet_status': 'ok',
+            'signal_percent': 65, 'connection': 'wlan', 'rx_bytes_sec': 2*1024**2, 'tx_bytes_sec': 1024})
+        self.assertIn('WLAN 65 %', self.window.mini_ping.get_text())
+        self.assertEqual(self.window.mini_transfer.get_text(), '↓ 2.0 MiB/s   ·   ↑ 1 KiB/s')
+        self.window.metrics_state={};self.window.update_metrics()
+        self.assertIn('CPU — %', self.window.mini_load.get_text())
+        self.window.update_network({'internet_status':'disconnected'})
+        self.assertEqual(self.window.mini_ping.get_text(), 'Ping · offline')
+        self.assertEqual(self.window.mini_transfer.get_text(), '↓ —   ·   ↑ —')
 
 
 if __name__ == '__main__':

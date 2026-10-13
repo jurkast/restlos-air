@@ -2,6 +2,7 @@
 """Restlos Air — native desktop widget and CoolerControl interface."""
 import json
 import os
+import signal
 import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
@@ -11,6 +12,7 @@ gi.require_version('Gtk', '3.0')
 gi.require_version('Gdk', '3.0')
 from gi.repository import Gtk, Gdk, Gio, GLib
 from sensors import snapshot, cached_pump
+from metrics import MetricsSampler
 from coolercontrol import BackendError, Client, secret_store, validate_curve
 
 BASE = Path(__file__).resolve().parent
@@ -43,6 +45,9 @@ button:disabled { color: #afbdc1; background: #27343a; }
 button.fan { background: transparent; padding: 11px 12px; }
 button.fan:checked { background: #263d43; }
 entry, combobox button, spinbutton { color: #ecf5f2; background: #23353c; }
+scale trough { background: #304047; border: none; }
+scale highlight { background: #84dfc5; border: none; }
+scale slider { background: #84dfc5; border: none; box-shadow: none; }
 entry { border: 1px solid #547079; border-radius: 7px; padding: 7px; }
 separator { background: #2d4147; min-height: 1px; }
 '''
@@ -139,6 +144,9 @@ class AirWindow(Gtk.ApplicationWindow):
         self.pump_read_at = 0
         self.pump_busy = False
         self.network_state = {}
+        self.metrics_sampler = MetricsSampler()
+        self.metrics_state = {}
+        self.metrics_last = 0
         self.alarm_state = None
         self.auth_window = None
         self.closed = False
@@ -194,6 +202,11 @@ class AirWindow(Gtk.ApplicationWindow):
         add(history_box,label('Temperaturen · letzte 2 Minuten','muted'))
         self.history_chart=add(history_box,Chart(True))
         add(history_box,label('CPU: Mint     GPU: Blau','muted'))
+        load_box=box(spacing=6);load_box.get_style_context().add_class('panel');add(content,load_box)
+        add(load_box,label('Auslastung & Speicher','section'))
+        self.load_detail=add(load_box,label('Messung startet …','muted'));self.load_detail.set_line_wrap(True)
+        audio_button=Gtk.Button(label='Audio-Widget öffnen')
+        audio_button.connect('clicked',lambda *_:self.get_application().show_audio());add(load_box,audio_button)
         fan_head=box(False);add(content,fan_head)
         add(fan_head,label('Lüfter & Wasserpumpe','section'),True)
         self.show_zero=Gtk.CheckButton(label='0 U/min anzeigen');self.show_zero.connect('toggled',lambda *_:self.update());add(fan_head,self.show_zero)
@@ -290,6 +303,9 @@ class AirWindow(Gtk.ApplicationWindow):
         add(body,Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
         self.mini_pump=add(body,label('Pumpe · — U/min','muted'))
         self.mini_ping=add(body,label('Ping · — ms','accent'))
+        self.mini_load=add(body,label('CPU — %   ·   GPU — %','muted'))
+        self.mini_memory=add(body,label('RAM —   ·   VRAM —','muted'))
+        self.mini_transfer=add(body,label('↓ —   ·   ↑ —','muted'))
         add(mini,self.open_studio)
 
     def remember_geometry(self):
@@ -351,7 +367,7 @@ class AirWindow(Gtk.ApplicationWindow):
         if not 0<=i<d.get_n_monitors():return False
         g=d.get_monitor(i).get_workarea()
         w=min(390 if self.compact else 720,g.width-36)
-        h=min(228 if self.compact else 1560,g.height-60)
+        h=min(326 if self.compact else 1560,g.height-60)
         x=g.x+g.width-w-24 if self.compact else g.x+(g.width-w)//2
         y=g.y+24 if self.compact else g.y+max(20,(g.height-h)//3)
         saved=self.geometries.get('compact' if self.compact else 'studio')
@@ -363,7 +379,7 @@ class AirWindow(Gtk.ApplicationWindow):
                          and d.get_monitor(j).get_workarea().y <= sy < d.get_monitor(j).get_workarea().y+d.get_monitor(j).get_workarea().height),None)
             if target is not None:
                 w=min(max(360 if self.compact else 620,sw),target.width-24)
-                h=min(max(220 if self.compact else 600,sh),target.height-24)
+                h=min(max(326 if self.compact else 600,sh),target.height-24)
                 x=max(target.x,min(sx,target.x+target.width-w))
                 y=max(target.y,min(sy,target.y+target.height-h))
         self.resize(w,h);self.move(x,y);return False
@@ -420,6 +436,10 @@ class AirWindow(Gtk.ApplicationWindow):
             if now-self.pump_last>=2:self.refresh_pump()
             self.show_pump(self.pump_rpm if now-self.pump_read_at<=10 else None)
         self.mini_live.set_text('LIVE' if self.latest['cpu'] is not None and self.latest['gpu'] is not None else 'DATEN FEHLEN')
+        if now-self.metrics_last>=2:
+            self.metrics_last=now
+            self.metrics_state=self.metrics_sampler.sample()
+            self.update_metrics()
         self.check_alarms()
         if self.compact:return True
         self.history_chart.data=[[(t-now,cpu) for t,cpu,gpu in self.history],[(t-now,gpu) for t,cpu,gpu in self.history]];self.history_chart.queue_draw()
@@ -444,6 +464,19 @@ class AirWindow(Gtk.ApplicationWindow):
 
     def show_pump(self,rpm):
         self.mini_pump.set_text('Pumpe · '+('—' if rpm is None else f'{rpm:,.0f}'.replace(',','.'))+' U/min')
+
+    def update_metrics(self):
+        data=self.metrics_state
+        percent=lambda key:'—' if data.get(key) is None else f'{data[key]:.0f}'
+        load=f"CPU {percent('cpu_percent')} %   ·   GPU {percent('gpu_percent')} %"
+        def memory(prefix):
+            used,total=data.get(prefix+'_used_bytes'),data.get(prefix+'_total_bytes')
+            return '—' if used is None or total is None else f'{used/2**30:.1f}/{total/2**30:.1f} GiB'
+        ram, vram=memory('ram'),memory('vram')
+        self.mini_load.set_text(load)
+        self.mini_memory.set_text(f'RAM {ram}   ·   VRAM {vram}')
+        self.load_detail.set_text(load+f'\nArbeitsspeicher: {ram} · {percent("ram_percent")} %\nGrafikspeicher: {vram} · {percent("vram_percent")} %')
+        self.mini_memory.set_tooltip_text('Verwendeter / gesamter Speicher in GiB · Messung alle 2 Sekunden')
 
     def refresh_pump(self):
         if self.pump_busy or self.backend_busy or not self.controller or not self.backend_state.get('connected'):return
@@ -610,11 +643,25 @@ class AirWindow(Gtk.ApplicationWindow):
         status=data.get('internet_status')
         text=f'Ping · {internet:.0f} ms' if internet is not None else 'Ping · keine Antwort'
         if status in ('no_route','disconnected'):text='Ping · offline'
+        signal=data.get('signal_percent')
+        connection=data.get('connection')
+        if connection=='wlan':text+=' · WLAN '+('—' if signal is None else f'{signal:.0f}')+' %'
+        elif connection=='ethernet':text+=' · LAN'
+        elif connection=='vpn':text+=' · VPN'
         self.mini_ping.set_text(text)
+        def rate(value):
+            if value is None:return '—'
+            if value>=1024**2:return f'{value/1024**2:.1f} MiB/s'
+            if value>=1024:return f'{value/1024:.0f} KiB/s'
+            return f'{value:.0f} B/s'
+        transfer=f"↓ {rate(data.get('rx_bytes_sec'))}   ·   ↑ {rate(data.get('tx_bytes_sec'))}"
+        self.mini_transfer.set_text(transfer)
+        self.mini_transfer.set_tooltip_text('Empfang / Versand über die aktive Verbindung · Durchschnitt seit der letzten Messung')
         gateway=f'{router:.0f} ms' if router is not None else 'keine Antwort'
         loss=data.get('loss_percent')
         detail=f"{data.get('interface') or 'Keine Verbindung'} · Router {gateway} · {text}"
         if loss is not None:detail+=f' · ICMP-Verlust {loss:.0f} %'
+        detail+='\n'+transfer
         self.network_detail.set_text(detail)
         self.mini_ping.set_tooltip_text(detail+' · Keine Antwort kann auch eine ICMP-Sperre bedeuten.')
         return False
@@ -642,9 +689,18 @@ class AirApp(Gtk.Application):
         self.add_main_option('compact',0,GLib.OptionFlags.NONE,GLib.OptionArg.NONE,'Widget öffnen',None)
         self.add_main_option('settings',0,GLib.OptionFlags.NONE,GLib.OptionArg.NONE,'Einstellungen öffnen',None)
         self.window=None
+        self.audio_window=None
         self.requested_compact=True
         self.indicator=None
         self.held=False
+    def do_startup(self):
+        Gtk.Application.do_startup(self)
+        for signum in (signal.SIGTERM,signal.SIGINT):
+            GLib.unix_signal_add(GLib.PRIORITY_DEFAULT,signum,self.on_signal)
+
+    def on_signal(self):
+        self.quit_app()
+        return False
     def do_command_line(self,command_line):
         self.requested_compact=not command_line.get_options_dict().contains('settings')
         self.activate();return 0
@@ -656,6 +712,16 @@ class AirApp(Gtk.Application):
             self.create_indicator()
             if not self.held:self.hold();self.held=True
         self.window.show_view(self.requested_compact)
+        if self.window.settings.get('audio_visible',True):
+            # X11 applies the restored Air size asynchronously; use its final
+            # position before placing the companion directly underneath it.
+            GLib.timeout_add(250,self.show_audio)
+
+    def show_audio(self,*_):
+        if not self.audio_window:
+            from audio_widget import AudioWindow
+            self.audio_window=AudioWindow(self,self.window)
+        self.audio_window.show_widget()
 
     def create_indicator(self):
         try:
@@ -669,6 +735,7 @@ class AirApp(Gtk.Application):
             menu=Gtk.Menu()
             for title,callback in [('Widget anzeigen',lambda *_:self.window.show_view(True)),
                                    ('Einstellungen öffnen',lambda *_:self.window.show_view(False)),
+                                   ('Audio-Widget öffnen',self.show_audio),
                                    ('Widget ausblenden',lambda *_:self.window.hide()),
                                    ('Beenden',self.quit_app)]:
                 item=Gtk.MenuItem(label=title);item.connect('activate',callback);menu.append(item)
@@ -682,12 +749,15 @@ class AirApp(Gtk.Application):
 
     def fallback_menu(self,icon,button,timestamp):
         menu=Gtk.Menu()
-        for title,callback in [('Einstellungen',lambda *_:self.window.show_view(False)),('Beenden',self.quit_app)]:
+        for title,callback in [('Einstellungen',lambda *_:self.window.show_view(False)),('Audio-Widget öffnen',self.show_audio),('Beenden',self.quit_app)]:
             item=Gtk.MenuItem(label=title);item.connect('activate',callback);menu.append(item)
         menu.show_all();menu.popup(None,None,None,None,button,timestamp)
 
     def quit_app(self,*_):
-        self.window.remember_geometry();self.window.save();self.window.destroy()
+        if self.audio_window:
+            self.audio_window.remember_geometry();self.audio_window.destroy()
+        if self.window:
+            self.window.remember_geometry();self.window.save();self.window.destroy()
         if self.held:self.release();self.held=False
         self.quit()
 

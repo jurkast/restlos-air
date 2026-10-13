@@ -32,7 +32,9 @@ jobs:
         run: /usr/bin/python3 -m unittest discover -s tests -p 'test_*.py' -v
 
       - name: Headless native GUI tests
-        run: dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/gui_smoke.py
+        run: |
+          dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/gui_smoke.py
+          dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/audio_gui_smoke.py
 
       - name: Build Debian package
         run: /usr/bin/python3 scripts/build_deb.py

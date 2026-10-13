@@ -4,13 +4,20 @@
 [![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-blue.svg)](LICENSE)
 
 Ein kleines Temperatur- und Lüfter-Widget für Zorin OS. Restlos Air zeigt CPU, GPU,
-Hotspot, Pumpendrehzahl und Ping auf einem zweiten Bildschirm. Ein Klick auf die
+Hotspot, Pumpendrehzahl, Auslastung, Speicherverbrauch und WLAN-Daten auf einem zweiten Bildschirm. Ein Klick auf die
 Werte öffnet **Air Studio** mit den Einstellungen. Die Anwendung verwendet GTK 3
 und den vorhandenen CoolerControl-Dienst.
 
 ![Restlos Air als Desktop-Widget](docs/widget.png)
 
-[Download Version 1.0.1](https://github.com/jurkast/restlos-air/releases/tag/v1.0.1)
+Das passende **Audio-Widget** bietet Lautstärke, Mikrofon-Stummschaltung und
+Gerätewechsel. Beide Widgets teilen sich einen Prozess und das Tray-Symbol.
+
+![Restlos Audio](docs/audio.png)
+
+Die Abbildungen zeigen die echte Oberfläche mit Beispielwerten.
+
+[Download Version 1.1.0](https://github.com/jurkast/restlos-air/releases/tag/v1.1.0)
 · [Fehler melden](https://github.com/jurkast/restlos-air/issues)
 
 ## Funktionen
@@ -23,6 +30,9 @@ und den vorhandenen CoolerControl-Dienst.
 - Wiederherstellung der gesicherten vorherigen Regelung.
 - Ping zum Router und zu 1.1.1.1; Anzeige des ICMP-Paketverlusts im Studio.
 - Bildschirmwahl, Position und Anschlussnamen im Benutzerprofil.
+- CPU-/GPU-Auslastung sowie verwendeter/gesamter RAM und Grafikspeicher.
+- Aktive WLAN-Signalstärke und Empfangs-/Senderate der Standardverbindung.
+- Audio-Widget mit Lautstärke von 0–100 %, Mikrofon, Ausgabegerät und Bildschirmwahl.
 
 ## Hardware-Unterstützung
 
@@ -46,19 +56,21 @@ Kanal 6. Ein Verteiler kann mehrere Lüfter über einen gemeinsamen Kanal steuer
 ## Installation
 
 Benötigt werden Python 3.10 oder neuer, GTK 3/PyGObject/Cairo, libsecret,
-AyatanaAppIndicator, `iputils-ping`, `iproute2` und **CoolerControl-Dienst ab 5.0.1**.
+AyatanaAppIndicator, `iputils-ping`, `iproute2`, `pulseaudio-utils` (`pactl`) und **CoolerControl-Dienst ab 5.0.1**.
+Audio funktioniert mit PulseAudio oder PipeWire-Pulse. Die optionale WLAN-Signalstärke
+benötigt NetworkManager mit `nmcli`; ohne diesen Dienst bleiben Ping und Datenraten verfügbar.
 
 1. Zuerst CoolerControl nach der
    [offiziellen Anleitung für Debian/Ubuntu](https://docs.coolercontrol.org/installation/debian)
    einrichten. Sein Dienst muss die Hardware erkennen. Restlos Air richtet selbst
    kein fremdes Paketrepository ein.
 2. Das `.deb` und die `.deb.sha256` von der
-   [Release-Seite](https://github.com/jurkast/restlos-air/releases/tag/v1.0.1) herunterladen.
+   [Release-Seite](https://github.com/jurkast/restlos-air/releases/tag/v1.1.0) herunterladen.
 3. Im Downloadordner prüfen und installieren:
 
 ```bash
-sha256sum -c restlos-air_1.0.1_all.deb.sha256
-sudo apt install ./restlos-air_1.0.1_all.deb
+sha256sum -c restlos-air_1.1.0_all.deb.sha256
+sudo apt install ./restlos-air_1.1.0_all.deb
 restlos-air
 ```
 
@@ -81,6 +93,15 @@ zum Widget; das Kreuz im Widget blendet es aus. **Strg+M** wechselt die Ansicht,
 **Escape** schließt die große Ansicht beziehungsweise blendet das Widget aus.
 Die Kühlregelung läuft im CoolerControl-Dienst weiter, wenn die Oberfläche endet.
 
+Das Audio-Widget öffnet sich beim ersten Start ebenfalls. **Geräte** öffnet die
+Auswahl für Ausgabe, Mikrofon und Bildschirm. Beim Wechsel zieht Restlos laufende
+Audioverbindungen zum ausgewählten Gerät um; Audio-Monitorquellen sind nicht als
+Mikrofon auswählbar. Die Schaltflächen zeigen den aktuellen Stummstatus. Ein Klick
+wechselt ihn. Das Kreuz blendet Audio aus; **Audio-Widget öffnen** im Tray-Menü
+oder Studio zeigt es wieder. Seine Position und Sichtbarkeit werden gespeichert.
+Die App startet keine Mikrofonaufnahme. Bei fehlendem Audiodienst werden die
+Regler deaktiviert und eine Meldung angezeigt.
+
 Eine Lüftervorgabe wird erst über **Anwenden** übernommen. Fehlende, veraltete oder
 ungültige Temperaturwerte blockieren neue Vorgaben. Manuelle Leistung wird als
 Kennlinie mit Temperaturschutz im Dienst eingerichtet. **Vorherige Regelung** stellt
@@ -92,6 +113,19 @@ Temperaturen werden jede Sekunde gelesen. Die Pumpendrehzahl kommt im Widget all
 zwei Sekunden aus dem vorhandenen Dienstcache, statt den NCT-Chip erneut abzufragen.
 Lüfter-, PWM- und Hardwarekennlinien im Studio werden alle fünf Sekunden gelesen.
 Ein fehlender Wert wird als „—“ angezeigt.
+
+Auslastung und Speicher werden alle zwei Sekunden aus lokalen Linux-Dateien
+gelesen. Die CPU-Auslastung benötigt zwei Messpunkte. WLAN-Signalstärke kommt
+höchstens alle 15 Sekunden aus dem vorhandenen NetworkManager-Cache; Restlos
+fordert keinen Scan an. Datenraten werden alle fünf Sekunden aus Bytezählern der
+aktiven Standardschnittstelle berechnet. Sie zeigen den gesamten Interfaceverkehr,
+einschließlich anderer Apps. Die erste Probe und ein Verbindungswechsel liefern
+zunächst „—“. WLAN-Prozentwerte beschreiben Signalstärke, keine Datenrate.
+
+Audio wird über einen schlafenden `pactl subscribe`-Prozess aktualisiert. Zusammengehörige
+Ereignisse und Reglerbewegungen werden gebündelt; es gibt keine periodische
+Audioabfrage im normalen Betrieb. Bei Ausfall wird mit wachsendem Abstand erneut
+verbunden. Audio und Lüftersteuerung haben getrennte Hintergrundaufgaben.
 
 Alle fünf Sekunden wird je ein kleines ICMP-Paket zum Gateway und zu `1.1.1.1`
 gesendet. Das ist kein automatischer Spielserver-Ping. Paketverlust bezieht sich auf
@@ -117,6 +151,7 @@ Tests und CI benötigen keine echte Lüfterhardware und wenden keine Vorgaben am
 ```bash
 /usr/bin/python3 -m unittest discover -s tests -p 'test_*.py'
 xvfb-run -a /usr/bin/python3 tests/gui_smoke.py
+xvfb-run -a /usr/bin/python3 tests/audio_gui_smoke.py
 ```
 
 Für den GUI-Test werden GTK 3/PyGObject, Cairo, libsecret und Xvfb benötigt.
@@ -128,7 +163,7 @@ anschließende Wiederherstellung tatsächlich geprüft. Der Autostart nach einem
 Neustart wurde bestätigt. Backend-Fehlerfälle, Netzwerkzustände, Cache-Frische und
 die native Oberfläche werden zusätzlich ohne echte Hardware getestet.
 
-Im 30-Sekunden-Leerlauftest lag das optimierte Widget bei etwa **0,2 % eines
+Im 30-Sekunden-Leerlauftest von Version 1.0.1 lag das optimierte Widget bei etwa **0,2 % eines
 CPU-Kerns und 67,7 MiB RAM**. Das ist eine Messung auf einem Rechner und keine
 garantierte Obergrenze. Eine erfolgreiche Installation kalibriert die Lüfter nicht
 automatisch und bestätigt nicht die Verkabelung eines anderen Rechners.

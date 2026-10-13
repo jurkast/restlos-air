@@ -1,5 +1,15 @@
 # Änderungen
 
+## 1.1.0 – 2026-10-13
+
+- CPU-/GPU-Auslastung sowie RAM- und Grafikspeicherverbrauch in Widget und Studio.
+- Aktive WLAN-Signalstärke ohne Scan sowie Empfangs- und Senderate.
+- Eigenes rahmenloses Audio-Widget im selben Prozess, mit Lautstärke, Ausgabe- und Mikrofon-Stummschaltung.
+- Gerätewahl für Ausgabe und Mikrofon; laufende Audioverbindungen werden übernommen, Monitor-Aufnahmen bleiben erhalten.
+- Audio reagiert auf Dienstereignisse; Regleränderungen werden gebündelt und auf 0–100 % begrenzt.
+- Position und Sichtbarkeit des Audio-Widgets werden gespeichert; Zugriff über das vorhandene Tray-Menü.
+- Tests für fehlende Geräte, Audiofehler, Interfacewechsel und Zählerreset.
+
 ## 1.0.1 – 2026-10-13
 
 Erste öffentliche GitHub-Version.
