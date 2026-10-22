@@ -23,11 +23,11 @@ METRICS = (('cpu', 'CPU'), ('gpu', 'GPU'), ('hotspot', 'HOT'), ('ssd', 'SSD'))
 CAPTIONS = {'top': ('TOP', 18), 'pump': ('PUMPE', 11), 'ping': ('PING', 12), 'transfer': ('NETZ', 19),
             'disk': ('DISK', 19), 'power': ('GPU', 5), 'clock': ('TAKT', 8)}
 # Dichte-Stufen, wenn nicht alles in die Monitorbreite passt: Abstand, Balkenbreite, Feldbreiten.
-_NORMAL = {'spacing': 12, 'meter': 70, 'chars': {}, 'short': False, 'head': 'R', 'rows': 1}
-_DENSE = {'spacing': 8, 'meter': 46, 'chars': {'top': 14, 'transfer': 12, 'disk': 12, 'ping': 11}, 'short': True, 'head': 'R', 'rows': 1}
-_DENSEST = {'spacing': 6, 'meter': 0, 'chars': {'top': 11, 'transfer': 11, 'disk': 11, 'ping': 6, 'pump': 5}, 'short': True, 'head': 'R', 'rows': 1}
-# Lieber zwei Zeilen als Werte weglassen: erst dichter, dann zweizeilig (Leiste wird höher).
-DENSITY = (_NORMAL, _DENSE, {**_NORMAL, 'rows': 2}, {**_DENSE, 'rows': 2}, {**_DENSEST, 'rows': 2})
+DENSITY = (
+    {'spacing': 12, 'meter': 70, 'chars': {}, 'short': False},
+    {'spacing': 8, 'meter': 46, 'chars': {'top': 14, 'transfer': 12, 'disk': 12, 'ping': 11}, 'short': True},
+    {'spacing': 6, 'meter': 0, 'chars': {'top': 11, 'transfer': 11, 'disk': 11, 'ping': 6, 'pump': 5}, 'short': True},
+)
 
 
 def short_rate(value) -> str:
@@ -138,57 +138,22 @@ class BarWindow(Gtk.Window):
             self.place()
             self.apply_strut()
 
-    def build(self) -> None:
-        from panels import bar_items
-        for child in self.get_children():
-            child.destroy()
-        events = Gtk.EventBox()
-        events.set_name('bar-surface')
-        events.get_style_context().add_class('bar-' + self.edge)
-        events.set_tooltip_text('Klicken öffnet Air Studio')
-        events.connect('button-press-event', self.clicked)
-        self.add(events)
-        density = DENSITY[0 if self.vertical else self.density]
-        two_rows = density['rows'] == 2 and not self.vertical
-        rows = []
-        for _ in range(2 if two_rows else 1):
-            rows.append(Gtk.Box(orientation=Gtk.Orientation.VERTICAL if self.vertical else Gtk.Orientation.HORIZONTAL,
-                                spacing=8 if self.vertical else density['spacing']))
-        if two_rows:
-            outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-            for row in rows:
-                row.set_size_request(-1, THICKNESS - 4)
-                outer.pack_start(row, False, False, 0)
-        else:
-            outer = rows[0]
-        events.add(outer)
-        surface = rows[0]
-        for setter in ('set_margin_top', 'set_margin_bottom', 'set_margin_start', 'set_margin_end'):
-            getattr(outer, setter)(10 if self.vertical else 2 if two_rows else 0)
-        outer.set_margin_start(12 if not self.vertical else 10)
-        outer.set_margin_end(8)
-        head = _label(density['head'], 'eyebrow')
-        head.set_tooltip_text('Restlos Air')
-        head.set_valign(Gtk.Align.CENTER)
-        surface.pack_start(head, False, False, 0)
-        self.items = bar_items(self.owner.settings)
-        self.temps, self.loads, self.memory, self.texts = {}, {}, {}, {}
-        self.profile_button = self.audio_button = self.mic_button = None
+    def _separator(self) -> Gtk.Separator:
+        separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL if self.vertical else Gtk.Orientation.VERTICAL)
+        separator.get_style_context().add_class('bar-separator')
+        if not self.vertical:
+            separator.set_margin_top(8)
+            separator.set_margin_bottom(8)
+        return separator
+
+    def _add_items(self, surface: Gtk.Box, keys: list[str], density: dict) -> None:
+        """One row: items with a thin line wherever the group changes."""
         titles = dict(METRICS)
-        group = 'head'
-        split = (len(self.items) + 1) // 2 if two_rows else None
-        for index, key in enumerate(self.items):
-            if index == split:
-                # Zweite Zeile beginnt ohne Trennlinie.
-                surface, group = rows[1], GROUPS.get(key)
-            if GROUPS.get(key) != group:
-                separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL if self.vertical else Gtk.Orientation.VERTICAL)
-                separator.get_style_context().add_class('bar-separator')
-                if not self.vertical:
-                    separator.set_margin_top(8)
-                    separator.set_margin_bottom(8)
-                surface.pack_start(separator, False, False, 0)
-                group = GROUPS.get(key)
+        group = None
+        for key in keys:
+            if group is not None and GROUPS.get(key) != group:
+                surface.pack_start(self._separator(), False, False, 0)
+            group = GROUPS.get(key)
             if key in titles:
                 cell = Gtk.Box(spacing=6)
                 cell.pack_start(_label(titles[key], 'row-name'), False, False, 0)
@@ -201,8 +166,6 @@ class BarWindow(Gtk.Window):
                     load.set_width_chars(4)
                     cell.pack_start(load, False, False, 0)
                     self.loads[key] = load
-                cell.set_valign(Gtk.Align.CENTER)
-                surface.pack_start(cell, False, False, 0)
             elif key in ('ram', 'vram'):
                 cell = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
                 line = Gtk.Box(spacing=6)
@@ -213,21 +176,16 @@ class BarWindow(Gtk.Window):
                 cell.pack_start(line, False, False, 0)
                 bar = self.owner_meter()
                 bar.set_size_request(-1 if self.vertical else max(density['meter'], 1), -1)
-                if density['meter']:
+                if density['meter'] or self.vertical:
                     cell.pack_start(bar, False, False, 0)
-                cell.set_valign(Gtk.Align.CENTER)
-                surface.pack_start(cell, False, False, 0)
                 self.memory[key] = (value, bar)
             elif key == 'profile':
-                self.profile_button = Gtk.Button(label='Profil')
-                self.profile_button.get_style_context().add_class('profile-pill')
-                self.profile_button.set_valign(Gtk.Align.CENTER)
-                self.profile_button.set_tooltip_text('Lüfterprofil wechseln: Leise → Normal → Spiel')
-                self.profile_button.connect('clicked', lambda *_: self.owner.cycle_profile())
-                surface.pack_start(self.profile_button, False, False, 0)
+                cell = self.profile_button = Gtk.Button(label='Profil')
+                cell.get_style_context().add_class('profile-pill')
+                cell.set_tooltip_text('Lüfterprofil wechseln: Leise → Normal → Spiel')
+                cell.connect('clicked', lambda *_: self.owner.cycle_profile())
             elif key == 'audio':
                 cell = Gtk.Box(spacing=4)
-                cell.set_valign(Gtk.Align.CENTER)
                 self.audio_button = Gtk.Button(label='🔊 —')
                 self.audio_button.get_style_context().add_class('mini-close')
                 self.audio_button.set_tooltip_text('Klicken: Ton an/aus · Mausrad: Lautstärke')
@@ -240,12 +198,10 @@ class BarWindow(Gtk.Window):
                 self.mic_button.connect('clicked', lambda *_: self.owner.audio_action('mic'))
                 cell.pack_start(self.audio_button, False, False, 0)
                 cell.pack_start(self.mic_button, False, False, 0)
-                surface.pack_start(cell, False, False, 0)
             else:
                 caption, chars = CAPTIONS[key]
                 chars = density['chars'].get(key, chars)
                 cell = Gtk.Box(spacing=6)
-                cell.set_valign(Gtk.Align.CENTER)
                 cell.pack_start(_label(caption, 'row-name'), False, False, 0)
                 value = _label('—', 'row-value')
                 if self.vertical:
@@ -257,7 +213,52 @@ class BarWindow(Gtk.Window):
                     value.set_ellipsize(Pango.EllipsizeMode.END)
                 cell.pack_start(value, False, False, 0)
                 self.texts[key] = value
-                surface.pack_start(cell, False, False, 0)
+            cell.set_valign(Gtk.Align.CENTER)
+            surface.pack_start(cell, False, False, 0)
+
+    def build(self) -> None:
+        from panels import bar_layout
+        for child in self.get_children():
+            child.destroy()
+        events = Gtk.EventBox()
+        events.set_name('bar-surface')
+        events.get_style_context().add_class('bar-' + self.edge)
+        events.set_tooltip_text('Klicken öffnet Air Studio')
+        events.connect('button-press-event', self.clicked)
+        self.add(events)
+        density = DENSITY[0 if self.vertical else self.density]
+        orientation = Gtk.Orientation.VERTICAL if self.vertical else Gtk.Orientation.HORIZONTAL
+        spacing = 8 if self.vertical else density['spacing']
+        self.items, self.extra = bar_layout(self.owner.settings)
+        self.expanded = bool(self.extra) and self.owner.settings.get('bar_expanded', False) is True
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8 if self.vertical else 0)
+        for setter in ('set_margin_top', 'set_margin_bottom'):
+            getattr(outer, setter)(10 if self.vertical else 0)
+        outer.set_margin_start(10 if self.vertical else 12)
+        outer.set_margin_end(8)
+        events.add(outer)
+        main = Gtk.Box(orientation=orientation, spacing=spacing)
+        if not self.vertical:
+            main.set_size_request(-1, THICKNESS)
+        outer.pack_start(main, False, False, 0)
+        head = _label('R', 'eyebrow')
+        head.set_tooltip_text('Restlos Air')
+        head.set_valign(Gtk.Align.CENTER)
+        main.pack_start(head, False, False, 0)
+        main.pack_start(self._separator(), False, False, 0)
+        self.temps, self.loads, self.memory, self.texts = {}, {}, {}, {}
+        self.profile_button = self.audio_button = self.mic_button = None
+        self._add_items(main, self.items, density)
+        self.extra_row = None
+        if self.expanded:
+            # Zweite Reihe: Zusatzwerte, unter der ersten eingerückt, damit die Spalten ruhig wirken.
+            outer.pack_start(self._separator_line(), False, False, 0)
+            self.extra_row = Gtk.Box(orientation=orientation, spacing=spacing)
+            if not self.vertical:
+                self.extra_row.set_size_request(-1, THICKNESS - 6)
+                self.extra_row.set_margin_start(head.get_preferred_width()[1] + spacing * 2 + 1)
+            outer.pack_start(self.extra_row, False, False, 0)
+            self._add_items(self.extra_row, self.extra, density)
         tail = Gtk.Box(spacing=6)
         tail.set_valign(Gtk.Align.CENTER if not self.vertical else Gtk.Align.END)
         self.pill = _label('LIVE', 'pill')
@@ -268,14 +269,35 @@ class BarWindow(Gtk.Window):
         self.update_button.set_no_show_all(True)
         self.update_button.connect('clicked', lambda *_: self.owner.get_application().restart_for_update())
         tail.pack_start(self.update_button, False, False, 0)
+        self.expand_button = Gtk.Button(label=('▴' if not self.vertical else '▴') if self.expanded else '▾')
+        self.expand_button.get_style_context().add_class('mini-close')
+        self.expand_button.set_tooltip_text('Zweite Reihe einklappen' if self.expanded else
+                                            f'Zweite Reihe ausklappen ({len(self.extra)} weitere Werte)')
+        self.expand_button.connect('clicked', lambda *_: self.toggle_extra())
+        self.expand_button.set_sensitive(bool(self.extra))
+        tail.pack_start(self.expand_button, False, False, 0)
         gear = Gtk.Button(label='⚙')
         gear.get_style_context().add_class('mini-close')
         gear.set_tooltip_text('Einstellungen öffnen')
         gear.get_accessible().set_name('Einstellungen öffnen')
         gear.connect('clicked', lambda *_: self.owner.show_view(False))
         tail.pack_start(gear, False, False, 0)
-        surface.pack_end(tail, False, False, 0)
+        if self.vertical:
+            outer.pack_end(tail, False, False, 0)
+        else:
+            main.pack_end(tail, False, False, 0)
         events.show_all()
+
+    def _separator_line(self) -> Gtk.Separator:
+        line = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        line.get_style_context().add_class('bar-separator')
+        return line
+
+    def toggle_extra(self) -> None:
+        self.owner.settings['bar_expanded'] = not self.expanded
+        self.owner.save()
+        self.rebuild()
+        self.owner.push_bar()
 
     def audio_scroll(self, _widget, event) -> bool:
         direction = event.direction

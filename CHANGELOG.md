@@ -1,5 +1,11 @@
 # Änderungen
 
+## 1.7.0 – 2026-10-22
+
+- Leiste mit zwei Reihen: oben das Wichtigste inklusive Ping, Lautstärke und Mikrofon; unten Pumpe, Netz, Laufwerke, GPU-Watt und CPU-Takt.
+- Die untere Reihe lässt sich mit ▾ / ▴ direkt in der Leiste aus- und einklappen; der Zustand wird gespeichert.
+- „Leiste zusammenstellen“: jeder Wert wahlweise Oben, Unten oder Aus, Reihenfolge mit ↑/↓ – Platz für spätere Zusatzwerte.
+
 ## 1.6.4 – 2026-10-22
 
 - In der Leiste steht statt „RESTLOS AIR“ nur noch „R“ – mehr Platz für Werte.

@@ -706,7 +706,7 @@ class AirWindow(Gtk.ApplicationWindow):
             app=self.get_application()
             # Audio in der Leiste braucht den Audiodienst auch bei ausgeblendetem Audio-Widget.
             # Nicht direkt erzeugen: das Audio-Fenster meldet sich beim Start selbst hier zurück.
-            if 'audio' in self.bar.items and hasattr(app,'ensure_audio') and not app.audio_window and not app.audio_pending:
+            if self.bar.audio_button is not None and hasattr(app,'ensure_audio') and not app.audio_window and not app.audio_pending:
                 app.audio_pending=True
                 GLib.idle_add(lambda:app.ensure_audio() and False)  # one-shot: a truthy return would repeat forever
             try:self.bar.show_values(self)
