@@ -38,12 +38,12 @@ class AudioWindow(Gtk.ApplicationWindow):
         self.set_skip_taskbar_hint(True)
         self.set_skip_pager_hint(True)
         self.set_type_hint(Gdk.WindowTypeHint.UTILITY)
-        self.set_keep_above(True)
+        self.set_keep_above(owner.settings.get('on_top',True) is not False)
         self.set_app_paintable(True)
         visual=self.get_screen().get_rgba_visual()
         if visual:self.set_visual(visual)
         self.set_border_width(10)
-        self.set_default_size(390,210)
+        self.set_default_size(300,190)
         self.connect('delete-event',self.on_delete)
         self.connect('destroy',self.cleanup)
         self.connect('key-press-event',self.key)
@@ -52,7 +52,7 @@ class AudioWindow(Gtk.ApplicationWindow):
         body=row(True,10);pack(surface,body)
         for side in ('top','bottom','start','end'):getattr(body,'set_margin_'+side)(14)
         header=row();pack(body,header)
-        drag=Gtk.EventBox();drag.add(text('RESTLOS / AUDIO','brand'))
+        drag=Gtk.EventBox();drag.add(text('RESTLOS AUDIO','eyebrow'))
         drag.connect('button-press-event',self.drag)
         drag.set_tooltip_text('Ziehen zum Verschieben')
         pack(header,drag,True)
@@ -60,7 +60,7 @@ class AudioWindow(Gtk.ApplicationWindow):
         close.set_tooltip_text('Audio-Widget ausblenden');close.connect('clicked',self.on_delete);pack(header,close)
         self.output_name=pack(body,text('Audio wird verbunden …'))
         self.output_name.set_ellipsize(Pango.EllipsizeMode.END)
-        self.output_name.set_max_width_chars(42)
+        self.output_name.set_max_width_chars(34)
         volume_row=row();pack(body,volume_row)
         self.output_mute=Gtk.Button(label='Ton an')
         self.output_mute.set_tooltip_text('Ausgabe stummschalten oder wieder einschalten')
@@ -89,13 +89,13 @@ class AudioWindow(Gtk.ApplicationWindow):
         for combo in (self.sinks,self.sources,self.monitors):
             for renderer in combo.get_cells():
                 renderer.set_property('ellipsize',Pango.EllipsizeMode.END)
-                renderer.set_property('max-width-chars',30)
+                renderer.set_property('max-width-chars',26)
         hint=pack(self.device_panel,text('Gerätewechsel übernimmt auch laufende Audioverbindungen.'))
         hint.set_line_wrap(True)
-        hint.set_max_width_chars(42)
+        hint.set_max_width_chars(34)
         self.feedback=pack(body,text(''))
         self.feedback.set_line_wrap(True)
-        self.feedback.set_max_width_chars(42)
+        self.feedback.set_max_width_chars(34)
         self.feedback.set_no_show_all(True)
         display=Gdk.Display.get_default()
         self.display_handlers=[display.connect('monitor-added',lambda *_:self.refresh_monitors()),
@@ -176,10 +176,10 @@ class AudioWindow(Gtk.ApplicationWindow):
         display=Gdk.Display.get_default();i=self.monitors.get_active()
         if not 0<=i<display.get_n_monitors():return False
         area=display.get_monitor(i).get_workarea()
-        w=min(390,area.width-24)
+        w=min(300,area.width-24)
         h=min(470 if self.devices_button.get_active() else 210,area.height-24)
         ax,ay=self.owner.get_position();_,ah=self.owner.get_size()
-        x=area.x+area.width-w-24;y=area.y+380
+        x=area.x+area.width-w-24;y=area.y+300
         if area.x<=ax<area.x+area.width:
             x=ax;y=ay+ah+12
             if y+h>area.y+area.height:y=ay-h-12
@@ -187,7 +187,7 @@ class AudioWindow(Gtk.ApplicationWindow):
         if isinstance(saved,list) and len(saved)==3 and all(type(v) is int for v in saved):
             sx,sy,sw=saved
             if area.x<=sx<area.x+area.width and area.y<=sy<area.y+area.height:
-                x,y=sx,sy;w=min(max(360,sw),area.width-24)
+                x,y=sx,sy  # Breite bleibt fest wie beim Air-Widget
         x=max(area.x,min(x,area.x+area.width-w))
         y=max(area.y,min(y,area.y+area.height-h))
         self.resize(w,h);self.move(x,y)

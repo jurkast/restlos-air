@@ -16,40 +16,67 @@ from metrics import MetricsSampler
 from coolercontrol import BackendError, Client, secret_store, validate_curve
 
 BASE = Path(__file__).resolve().parent
+COMPACT_WIDTH = 300
+COMPACT_HEIGHT = 250
 CONFIG = Path(os.environ.get('XDG_CONFIG_HOME', str(Path.home()/'.config'))) / 'restlos-air'
 SETTINGS = CONFIG / 'settings.json'
 CSS = b'''
-window { background-color: transparent; color: #ecf5f2; }
-#surface { background-color: rgba(13,23,29,0.94); border-radius: 22px; }
-label { color: #ecf5f2; font-family: Sans; }
-.brand { font-size: 11px; letter-spacing: 3px; color: #a6babc; }
-.title { font-size: 30px; font-weight: 500; }
-.muted { color: #a6babc; font-size: 12px; }
-.value { font-size: 38px; font-weight: 400; }
-.section { font-size: 16px; font-weight: 500; }
-.rpm { font-size: 22px; font-weight: 400; }
-.compact-value { font-size: 32px; font-weight: 400; }
-.compact-caption { color: #a6babc; font-size: 11px; }
-#mini-surface { background-color: rgba(13,23,29,0.94); border-radius: 16px; }
-button.mini-content { background: transparent; padding: 12px 16px; border-radius: 10px; }
-button.mini-content:hover { background: #20343b; }
-button.mini-close { background: transparent; padding: 2px 8px; min-height: 20px; }
-.accent { color: #84dfc5; }
+/* Restlos-Designsprache wie Bewerbung/Uninstaller (dunkler Modus): Petrol, Mint, Karten. */
+window { background-color: transparent; color: #e3edef; }
+#surface { background-color: rgba(21,35,46,0.96); border-radius: 18px; border: 1px solid #2b404b; }
+#mini-surface { background-color: rgba(21,35,46,0.93); border-radius: 16px; border: 1px solid #2b404b; }
+label { color: #e3edef; }
+.brand, .eyebrow { font-size: 10px; font-weight: 800; letter-spacing: 2px; color: #6ce0c3; }
+.title { font-size: 26px; font-weight: 800; letter-spacing: -0.6px; }
+.section { font-size: 15px; font-weight: 700; }
+.muted, .compact-caption { color: #a6bbc5; font-size: 11px; }
+.value { font-size: 34px; font-weight: 800; }
+.rpm { font-size: 19px; font-weight: 700; }
+.tile { background-color: #20323e; border: 1px solid #3a505c; border-radius: 11px; }
+.tile-head { font-size: 9px; font-weight: 800; letter-spacing: 0.4px; color: #a6bbc5; }
+.tile-value { font-size: 21px; font-weight: 800; }
+.row-name { font-size: 11px; font-weight: 700; color: #a6bbc5; }
+.row-value { font-size: 11px; font-weight: 700; }
+.info { font-size: 11px; color: #c0d2d9; }
+.pill { border-radius: 999px; padding: 1px 8px; font-size: 9px; font-weight: 800; letter-spacing: 1px; }
+.state-ok { background-color: #244652; color: #9bf1dc; }
+.state-warn { background-color: #3a2f1f; color: #f2ba79; }
+.state-hot { background-color: #4a2420; color: #ff9284; }
+.state-missing { background-color: #2b404b; color: #a6bbc5; }
+.level-ok { color: #e3edef; }
+.level-warn { color: #f2ba79; }
+.level-hot { color: #ff9284; }
+.accent { color: #6ce0c3; }
 .warning { color: #f2ba79; }
-.panel { background-color: #192a31; border-radius: 12px; padding: 16px; }
-button { background: #23353c; color: #e6f4f0; border: none; border-radius: 8px; box-shadow: none; text-shadow: none; padding: 8px 12px; }
-button:hover { background: #304a53; }
-button:checked { background: #36594f; }
-button:focus { outline: 2px solid #84dfc5; outline-offset: 1px; }
-button:disabled { color: #afbdc1; background: #27343a; }
-button.fan { background: transparent; padding: 11px 12px; }
-button.fan:checked { background: #263d43; }
-entry, combobox button, spinbutton { color: #ecf5f2; background: #23353c; }
-scale trough { background: #304047; border: none; }
-scale highlight { background: #84dfc5; border: none; }
-scale slider { background: #84dfc5; border: none; box-shadow: none; }
-entry { border: 1px solid #547079; border-radius: 7px; padding: 7px; }
-separator { background: #2d4147; min-height: 1px; }
+.panel { background-color: #20323e; border: 1px solid #3a505c; border-radius: 15px; padding: 16px; }
+levelbar trough { background-color: #2b404b; border: none; border-radius: 999px; min-height: 5px; padding: 0; }
+levelbar block { border: none; border-radius: 999px; min-height: 5px; }
+levelbar block.filled.ok { background-color: #6ce0c3; }
+levelbar block.filled.warn { background-color: #f2ba79; }
+levelbar block.filled.full { background-color: #ff9284; }
+levelbar block.empty { background-color: transparent; }
+button { background-image: none; background-color: #20323e; color: #e3edef; border: 1px solid #3a505c; border-radius: 9px; box-shadow: none; text-shadow: none; padding: 7px 12px; }
+button:hover { border-color: #6ce0c3; }
+button:checked { background-color: #244652; color: #9bf1dc; }
+button:focus { outline: 2px solid #50b9ae; outline-offset: 1px; }
+button:disabled { color: #6f8590; background-color: #1b2b36; }
+button.primary { color: #ffffff; background-color: #167c77; border-color: #167c77; font-weight: 700; }
+button.primary:hover { background-color: #1b8f89; }
+button.mini-content { background-color: transparent; border-color: transparent; padding: 4px; border-radius: 12px; }
+button.mini-content:hover { background-color: rgba(36,70,82,0.45); border-color: transparent; }
+button.mini-close { background-color: transparent; border-color: transparent; padding: 0 6px; min-height: 18px; min-width: 18px; color: #a6bbc5; }
+button.mini-close:hover { color: #ffffff; background-color: #244652; }
+button.fan { background-color: transparent; border-color: transparent; padding: 9px 12px; }
+button.fan:checked { background-color: #244652; }
+entry, combobox button, spinbutton { color: #e3edef; background-color: #172a35; }
+entry { border: 1px solid #3a505c; border-radius: 8px; padding: 7px; }
+scale trough { background-color: #2b404b; border: none; }
+scale highlight { background-color: #167c77; border: none; }
+scale slider { background-color: #6ce0c3; border: none; box-shadow: none; }
+separator { background-color: #3a505c; min-height: 1px; }
+check { background-color: #172a35; border: 1px solid #58717a; }
+check:checked { background-color: #167c77; border-color: #167c77; color: #ffffff; }
+menu, .menu { background-color: #20323e; color: #e3edef; }
 '''
 
 
@@ -67,6 +94,55 @@ def box(vertical=True, spacing=8):
 def add(parent, child, expand=False):
     parent.pack_start(child, expand, expand, 0)
     return child
+
+
+# (Warnung, Alarm) in °C. Hotspot = GPU-Junction (Grenze bei RDNA ~110 °C), SSD = NVMe-Composite.
+LIMITS = {'cpu': (75, 85), 'gpu': (75, 85), 'hotspot': (90, 100), 'ssd': (60, 70)}
+TEMP_TITLES = (('cpu', 'CPU'), ('gpu', 'GPU'), ('hotspot', 'HOTSPOT'), ('ssd', 'SSD'))
+LEVELS = ('level-ok', 'level-warn', 'level-hot')
+HYSTERESIS = 5
+
+
+def de(value, digits=1):
+    """German decimal comma and thousands dot."""
+    return f'{value:,.{digits}f}'.replace(',', '\0').replace('.', ',').replace('\0', '.')
+
+
+def level(key, value):
+    if value is None:
+        return 'level-ok'
+    warn, hot = LIMITS[key]
+    return 'level-hot' if value >= hot else 'level-warn' if value >= warn else 'level-ok'
+
+
+def set_level(widget, name):
+    context = widget.get_style_context()
+    for item in LEVELS:
+        if item != name:
+            context.remove_class(item)
+    context.add_class(name)
+
+
+def meter():
+    # Offsets name the CSS class of the filled block: ≤80 % mint, ≤95 % amber, darüber rot.
+    bar = Gtk.LevelBar.new_for_interval(0, 1)
+    for name in ('low', 'high', 'full'):
+        bar.remove_offset_value(name)
+    bar.add_offset_value('ok', .8)
+    bar.add_offset_value('warn', .95)
+    bar.add_offset_value('full', 1)
+    bar.set_valign(Gtk.Align.CENTER)
+    return bar
+
+
+def rate(value):
+    if value is None:
+        return '—'
+    if value >= 1024**2:
+        return de(value / 1024**2) + ' MiB/s'
+    if value >= 1024:
+        return de(value / 1024, 0) + ' KiB/s'
+    return de(value, 0) + ' B/s'
 
 
 class Chart(Gtk.DrawingArea):
@@ -148,6 +224,7 @@ class AirWindow(Gtk.ApplicationWindow):
         self.metrics_state = {}
         self.metrics_last = 0
         self.alarm_state = None
+        self.hot_keys = set()
         self.auth_window = None
         self.closed = False
         self.geometries = self.settings.get('geometries', {})
@@ -183,21 +260,26 @@ class AirWindow(Gtk.ApplicationWindow):
         drag.add(heading);drag.connect('button-press-event',self.drag)
         drag.set_tooltip_text('Hier ziehen, um Air Studio zu verschieben')
         add(top,drag,True)
-        close=Gtk.Button(label='×');close.set_tooltip_text('Air Studio schließen');close.connect('clicked',lambda *_:self.close());add(top,close)
+        close=Gtk.Button(label='×');close.get_style_context().add_class('mini-close');close.set_valign(Gtk.Align.START)
+        close.set_tooltip_text('Air Studio schließen');close.connect('clicked',lambda *_:self.close());add(top,close)
         self.status=add(content,label('Sensoren werden gelesen …','muted'))
         controls=box(False);add(content,controls)
         self.monitor=Gtk.ComboBoxText();self.monitor.connect('changed',self.monitor_changed);add(controls,self.monitor,True)
-        self.pin=Gtk.ToggleButton(label='Im Vordergrund');self.pin.connect('toggled',lambda b:self.set_keep_above(self.compact or b.get_active()));add(controls,self.pin)
+        self.pin=Gtk.ToggleButton(label='Im Vordergrund')
+        self.pin.set_tooltip_text('Widget und Studio über anderen Fenstern halten. Aus: Widget bleibt unter Spielen und Videos.')
+        self.pin.set_active(self.settings.get('on_top',True) is not False)
+        self.pin.connect('toggled',self.pin_toggled);add(controls,self.pin)
         self.compact_button=Gtk.Button(label='Widget')
         self.compact_button.set_tooltip_text('Kleine Temperaturanzeige öffnen · Strg+M')
         self.compact_button.connect('clicked',lambda *_:self.set_compact(True));add(controls,self.compact_button)
         display=Gdk.Display.get_default()
         display.connect('monitor-added',lambda *_:self.refresh_monitors())
         display.connect('monitor-removed',lambda *_:self.refresh_monitors())
-        temps=box(False,28);add(content,temps)
+        temps=box(False,18);add(content,temps)
         self.temp_labels={}
-        for key,title in [('cpu','CPU'),('gpu','GPU'),('hotspot','GPU-HOTSPOT')]:
+        for key,title in TEMP_TITLES:
             col=box(spacing=2);add(temps,col,True);add(col,label(title,'brand'));self.temp_labels[key]=add(col,label('—','value'))
+            col.set_tooltip_text(f'Warnung ab {LIMITS[key][0]} °C · Alarm ab {LIMITS[key][1]} °C')
         history_box=box(spacing=6);history_box.get_style_context().add_class('panel');add(content,history_box)
         add(history_box,label('Temperaturen · letzte 2 Minuten','muted'))
         self.history_chart=add(history_box,Chart(True))
@@ -230,7 +312,7 @@ class AirWindow(Gtk.ApplicationWindow):
         # Gtk.Stack can select a named child only after that child is visible.
         self.stack.show_all()
         self.stack.set_visible_child_name('compact' if self.compact else 'studio')
-        self.set_keep_above(self.compact)
+        self.set_keep_above(self.pin.get_active())
         self.update()
         self.refresh_monitors()
         self.timer=GLib.timeout_add_seconds(1,self.update)
@@ -242,7 +324,7 @@ class AirWindow(Gtk.ApplicationWindow):
 
     def default_name(self,key):
         if key=='nct6798:6':return 'DeepCool · Wasserpumpe'
-        if key=='amdgpu:1':return 'Radeon RX 9070 XT'
+        if key=='amdgpu:1':return 'Grafikkarte · Lüfter'
         return 'Mainboard · Kanal '+key.split(':')[-1]
 
     def name(self,key):
@@ -252,6 +334,7 @@ class AirWindow(Gtk.ApplicationWindow):
         self.settings['names']=self.names
         self.settings['view']='compact' if self.compact else 'studio'
         self.settings['geometries']=self.geometries
+        if hasattr(self,'pin'):self.settings['on_top']=self.pin.get_active()
         try:
             SETTINGS.parent.mkdir(parents=True,exist_ok=True)
             tmp=SETTINGS.with_suffix('.tmp');tmp.write_text(json.dumps(self.settings,ensure_ascii=False,indent=2));tmp.replace(SETTINGS)
@@ -276,37 +359,67 @@ class AirWindow(Gtk.ApplicationWindow):
         return False
 
     def build_compact(self):
-        mini=box(spacing=0);mini.set_name('mini-surface')
+        mini=box(spacing=8);mini.set_name('mini-surface')
+        for side in ('top','bottom','start','end'):getattr(mini,'set_margin_'+side)(0)
         self.stack.add_named(mini,'compact')
-        header=box(False,8)
-        header.set_margin_top(10);header.set_margin_start(16);header.set_margin_end(8)
-        drag=Gtk.EventBox();drag.add(label('RESTLOS / AIR','brand'))
+        header=box(False,6)
+        header.set_margin_top(10);header.set_margin_start(14);header.set_margin_end(8)
+        drag=Gtk.EventBox();drag.add(label('RESTLOS AIR','eyebrow'))
         drag.connect('button-press-event',self.drag)
         drag.set_tooltip_text('Ziehen zum Verschieben · Strg+M wechselt die Ansicht')
         add(header,drag,True)
-        self.mini_live=add(header,label('LIVE','compact-caption'))
+        self.mini_live=add(header,label('LIVE','pill'));self.mini_live.set_valign(Gtk.Align.CENTER)
+        self.mini_live.get_style_context().add_class('state-ok')
         close=Gtk.Button(label='×');close.get_style_context().add_class('mini-close')
-        close.set_tooltip_text('Air Studio schließen');close.connect('clicked',lambda *_:self.close())
+        close.set_tooltip_text('Widget ausblenden · über das Tray-Symbol wieder öffnen');close.connect('clicked',lambda *_:self.close())
         add(header,close);add(mini,header)
         self.open_studio=Gtk.Button()
         self.open_studio.get_style_context().add_class('mini-content')
         self.open_studio.get_accessible().set_name('Air Studio öffnen')
-        self.open_studio.set_tooltip_text('Klicken öffnet die Einstellungen')
+        self.open_studio.set_tooltip_text('Klicken öffnet Air Studio mit Verlauf und Lüfterregelung')
         self.open_studio.connect('clicked',lambda *_:self.set_compact(False))
-        body=box(spacing=12);self.open_studio.add(body)
-        temps=box(False,22);add(body,temps)
+        self.open_studio.set_margin_start(4);self.open_studio.set_margin_end(4);self.open_studio.set_margin_bottom(4)
+        body=box(spacing=8);self.open_studio.add(body)
+        tiles=Gtk.Grid(column_spacing=6,column_homogeneous=True);tiles.set_hexpand(True);add(body,tiles)
         self.mini_temps={}
-        for key,title in [('cpu','CPU'),('gpu','GPU'),('hotspot','GPU-HOTSPOT')]:
-            col=box(spacing=2);add(temps,col,True)
-            add(col,label(title,'compact-caption'))
-            self.mini_temps[key]=add(col,label('—','compact-value'))
+        for column,(key,title) in enumerate(TEMP_TITLES):
+            tile=box(spacing=0);tile.get_style_context().add_class('tile');tile.set_hexpand(True)
+            tile.set_tooltip_text(f'{title} · Warnung ab {LIMITS[key][0]} °C · Alarm ab {LIMITS[key][1]} °C')
+            head=add(tile,label(title,'tile-head'));value=add(tile,label('—','tile-value'))
+            # GTK-3-Boxen ignorieren CSS-Padding; Innenabstand daher über Label-Ränder.
+            for item in (head,value):item.set_margin_start(7);item.set_margin_end(5)
+            head.set_margin_top(5);value.set_margin_bottom(3)
+            self.mini_temps[key]=value
+            tiles.attach(tile,column,0,1,1)
+        # Name · Balken · Wert, damit Last und Speicher auf einen Blick vergleichbar sind.
+        meters=Gtk.Grid(column_spacing=8,row_spacing=5);add(body,meters)
+        meters.set_margin_start(2);meters.set_margin_end(2)
+        self.mini_bars={};self.mini_values={}
+        for row,(key,title) in enumerate((('cpu','CPU'),('gpu','GPU'),('ram','RAM'),('vram','VRAM'))):
+            name=label(title,'row-name');name.set_width_chars(4)
+            bar=meter();bar.set_hexpand(True)
+            value=label('—','row-value',xalign=1);value.set_width_chars(11)
+            meters.attach(name,0,row,1,1);meters.attach(bar,1,row,1,1);meters.attach(value,2,row,1,1)
+            self.mini_bars[key]=bar;self.mini_values[key]=value
+        self.mini_values['ram'].set_tooltip_text('Verwendeter / gesamter Arbeitsspeicher · alle 2 Sekunden')
+        self.mini_values['vram'].set_tooltip_text('Verwendeter / gesamter Grafikspeicher · alle 2 Sekunden')
         add(body,Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
-        self.mini_pump=add(body,label('Pumpe · — U/min','muted'))
-        self.mini_ping=add(body,label('Ping · — ms','accent'))
-        self.mini_load=add(body,label('CPU — %   ·   GPU — %','muted'))
-        self.mini_memory=add(body,label('RAM —   ·   VRAM —','muted'))
-        self.mini_transfer=add(body,label('↓ —   ·   ↑ —','muted'))
+        info=Gtk.Grid(column_spacing=10,row_spacing=3,column_homogeneous=True);add(body,info)
+        info.set_margin_start(2);info.set_margin_end(2)
+        self.mini_pump=label('Pumpe · — U/min','info')
+        self.mini_ping=label('Ping · — ms','info',xalign=1)
+        self.mini_transfer=label('↓ —   ↑ —','info')
+        self.mini_signal=label('','info',xalign=1)
+        info.attach(self.mini_pump,0,0,1,1);info.attach(self.mini_ping,1,0,1,1)
+        info.attach(self.mini_transfer,0,1,1,1);info.attach(self.mini_signal,1,1,1,1)
         add(mini,self.open_studio)
+
+    def pin_toggled(self,button):
+        on_top=button.get_active()
+        self.set_keep_above(on_top)
+        audio=getattr(self.get_application(),'audio_window',None)
+        if audio:audio.set_keep_above(on_top)
+        self.save()
 
     def remember_geometry(self):
         if not self.get_mapped(): return
@@ -334,7 +447,7 @@ class AirWindow(Gtk.ApplicationWindow):
         self.remember_geometry()
         self.compact=compact
         self.stack.set_visible_child_name('compact' if compact else 'studio')
-        self.set_keep_above(compact or self.pin.get_active())
+        self.set_keep_above(self.pin.get_active())
         self.place()
         # Let GTK recompute its minimum size after changing stack children.
         GLib.idle_add(self.place)
@@ -366,22 +479,23 @@ class AirWindow(Gtk.ApplicationWindow):
         d=Gdk.Display.get_default();i=self.monitor.get_active()
         if not 0<=i<d.get_n_monitors():return False
         g=d.get_monitor(i).get_workarea()
-        w=min(390 if self.compact else 720,g.width-36)
-        h=min(326 if self.compact else 1560,g.height-60)
+        # Compact: feste Breite, Höhe ergibt sich aus dem Inhalt (resize auf 1 = Mindesthöhe).
+        w=min(COMPACT_WIDTH if self.compact else 720,g.width-36)
+        h=1 if self.compact else min(1560,g.height-60)
         x=g.x+g.width-w-24 if self.compact else g.x+(g.width-w)//2
         y=g.y+24 if self.compact else g.y+max(20,(g.height-h)//3)
         saved=self.geometries.get('compact' if self.compact else 'studio')
         if isinstance(saved,list) and len(saved)==4 and all(isinstance(n,int) for n in saved) and (self.compact or saved[3]>=600):
             sx,sy,sw,sh=saved
             # Restore only to a connected screen, and keep the whole panel reachable.
-            target=next((d.get_monitor(j).get_workarea() for j in range(d.get_n_monitors())
-                         if d.get_monitor(j).get_workarea().x <= sx < d.get_monitor(j).get_workarea().x+d.get_monitor(j).get_workarea().width
-                         and d.get_monitor(j).get_workarea().y <= sy < d.get_monitor(j).get_workarea().y+d.get_monitor(j).get_workarea().height),None)
+            target=next((area for area in (d.get_monitor(j).get_workarea() for j in range(d.get_n_monitors()))
+                         if area.x<=sx<area.x+area.width and area.y<=sy<area.y+area.height),None)
             if target is not None:
-                w=min(max(360 if self.compact else 620,sw),target.width-24)
-                h=min(max(326 if self.compact else 600,sh),target.height-24)
+                if not self.compact:
+                    w=min(max(620,sw),target.width-24)
+                    h=min(max(600,sh),target.height-24)
                 x=max(target.x,min(sx,target.x+target.width-w))
-                y=max(target.y,min(sy,target.y+target.height-h))
+                y=max(target.y,min(sy,target.y+target.height-max(h,COMPACT_HEIGHT)))
         self.resize(w,h);self.move(x,y);return False
 
     def select(self,b,key):
@@ -407,7 +521,7 @@ class AirWindow(Gtk.ApplicationWindow):
         if fan['curve'] and active:
             text='Ausgelesene Hardware-Kennlinie · Quelle: '+str(fan['source'] or 'unbekannt')
         else:text='Keine aktive Kennlinie über diese Schnittstelle auslesbar.'
-        if self.selected=='nct6798:6':text+=' Pumpenzuordnung aus dem Gespräch übernommen.'
+        if self.selected=='nct6798:6':text+=' Kanal 6 ist als Wasserpumpe geschützt und wird nicht geregelt.'
         managed=self.backend_state.get('channels',{}).get(self.selected,{})
         if managed.get('mode') in ('manual','curve'):
             self.mode_label.set_text('Restlos Air · '+('Manuell mit Temperaturschutz' if managed['mode']=='manual' else 'Eigene Kennlinie'))
@@ -417,30 +531,31 @@ class AirWindow(Gtk.ApplicationWindow):
 
     def update(self):
         now=time.monotonic()
-        if not self.get_visible() and hasattr(self,'latest'):return True
-        curves=not self.compact and now-self.curve_last>=5
+        hidden=not self.get_visible() and hasattr(self,'latest')
+        curves=not hidden and not self.compact and now-self.curve_last>=5
         self.latest=snapshot(include_curves=curves,include_fans=curves)
         if curves:
             self.fan_cache=self.latest['fans'];self.curve_last=now
         else:
             self.latest['fans']=self.fan_cache
+        # Überhitzung muss auch bei ausgeblendetem Widget gemeldet werden.
+        self.check_alarms()
+        if hidden:return True
         if now-self.backend_last>=10 and not self.backend_busy:
             self.backend_last=now;self.refresh_backend()
         # UI changes must not manufacture additional time samples.
         if not self.history or now-self.history[-1][0]>=.8:self.history.append((now,self.latest['cpu'],self.latest['gpu']))
         for key in self.temp_labels:
-            value=self.latest[key];text='—' if value is None else f'{value:.0f}°'
-            if self.compact:self.mini_temps[key].set_text(text)
-            else:self.temp_labels[key].set_text(text)
+            value=self.latest.get(key);text='—' if value is None else f'{value:.0f}°'
+            target=self.mini_temps[key] if self.compact else self.temp_labels[key]
+            target.set_text(text);set_level(target,level(key,value))
         if self.compact:
             if now-self.pump_last>=2:self.refresh_pump()
             self.show_pump(self.pump_rpm if now-self.pump_read_at<=10 else None)
-        self.mini_live.set_text('LIVE' if self.latest['cpu'] is not None and self.latest['gpu'] is not None else 'DATEN FEHLEN')
         if now-self.metrics_last>=2:
             self.metrics_last=now
             self.metrics_state=self.metrics_sampler.sample()
             self.update_metrics()
-        self.check_alarms()
         if self.compact:return True
         self.history_chart.data=[[(t-now,cpu) for t,cpu,gpu in self.history],[(t-now,gpu) for t,cpu,gpu in self.history]];self.history_chart.queue_draw()
         fans=self.latest['fans'];visible=[k for k,v in fans.items() if self.show_zero.get_active() or v['rpm'] not in (0,) or k in (self.selected,'nct6798:6','amdgpu:1')]
@@ -455,7 +570,7 @@ class AirWindow(Gtk.ApplicationWindow):
                 self.rows[key]=(b,title,sub,rpm)
             self.fan_box.show_all()
         for key,(b,title,sub,rpm) in self.rows.items():
-            value=fans[key];title.set_text(self.name(key));rpm.set_text('—' if value['rpm'] is None else f"{value['rpm']:,}".replace(',','.'))
+            value=fans[key];title.set_text(self.name(key));rpm.set_text('—' if value['rpm'] is None else de(value['rpm'],0))
             sub.set_text('U/min · '+('kein Messwert' if value['rpm'] is None else 'Stillstand / kein Drehzahlsignal' if value['rpm']==0 else 'Live-Messwert'))
         if not self.name_entry.has_focus() and self.name_entry.get_text()!=self.name(self.selected):self.name_entry.set_text(self.name(self.selected))
         self.status.set_text('● Live · '+time.strftime('%H:%M:%S') if self.latest['mainboard'] else 'Mainboard-Sensor fehlt · nct6775 ist möglicherweise nicht geladen')
@@ -463,7 +578,7 @@ class AirWindow(Gtk.ApplicationWindow):
         return True
 
     def show_pump(self,rpm):
-        self.mini_pump.set_text('Pumpe · '+('—' if rpm is None else f'{rpm:,.0f}'.replace(',','.'))+' U/min')
+        self.mini_pump.set_text('Pumpe · '+('—' if rpm is None else de(rpm,0))+' U/min')
 
     def update_metrics(self):
         data=self.metrics_state
@@ -471,12 +586,14 @@ class AirWindow(Gtk.ApplicationWindow):
         load=f"CPU {percent('cpu_percent')} %   ·   GPU {percent('gpu_percent')} %"
         def memory(prefix):
             used,total=data.get(prefix+'_used_bytes'),data.get(prefix+'_total_bytes')
-            return '—' if used is None or total is None else f'{used/2**30:.1f}/{total/2**30:.1f} GiB'
-        ram, vram=memory('ram'),memory('vram')
-        self.mini_load.set_text(load)
-        self.mini_memory.set_text(f'RAM {ram}   ·   VRAM {vram}')
+            return '—' if used is None or total is None else f'{de(used/2**30)}/{de(total/2**30,0)} GiB'
+        ram,vram=memory('ram'),memory('vram')
+        for key,source,text in (('cpu','cpu_percent',percent('cpu_percent')+' %'),('gpu','gpu_percent',percent('gpu_percent')+' %'),
+                                ('ram','ram_percent',ram),('vram','vram_percent',vram)):
+            value=data.get(source)
+            self.mini_bars[key].set_value(0 if value is None else max(0,min(100,value))/100)
+            self.mini_values[key].set_text(text)
         self.load_detail.set_text(load+f'\nArbeitsspeicher: {ram} · {percent("ram_percent")} %\nGrafikspeicher: {vram} · {percent("vram_percent")} %')
-        self.mini_memory.set_tooltip_text('Verwendeter / gesamter Speicher in GiB · Messung alle 2 Sekunden')
 
     def refresh_pump(self):
         if self.pump_busy or self.backend_busy or not self.controller or not self.backend_state.get('connected'):return
@@ -530,7 +647,7 @@ class AirWindow(Gtk.ApplicationWindow):
             self.points.append((t,d))
         self.editor_stack.add_named(curve,'curve');self.editor_stack.show_all();self.editor_stack.set_visible_child_name('manual')
         actions=box(False,8);add(self.control_area,actions)
-        self.apply_button=Gtk.Button(label='Anwenden');self.apply_button.connect('clicked',self.apply_control);add(actions,self.apply_button,True)
+        self.apply_button=Gtk.Button(label='Anwenden');self.apply_button.get_style_context().add_class('primary');self.apply_button.connect('clicked',self.apply_control);add(actions,self.apply_button,True)
         self.restore_button=Gtk.Button(label='Vorherige Regelung');self.restore_button.connect('clicked',self.restore_control);add(actions,self.restore_button,True)
         self.control_feedback=add(self.detail,label('','muted'));self.control_feedback.set_line_wrap(True)
         self.connect_button=Gtk.Button(label='Steuerung verbinden');self.connect_button.connect('clicked',self.connect_control);add(self.detail,self.connect_button)
@@ -645,21 +762,15 @@ class AirWindow(Gtk.ApplicationWindow):
         if status in ('no_route','disconnected'):text='Ping · offline'
         signal=data.get('signal_percent')
         connection=data.get('connection')
-        if connection=='wlan':text+=' · WLAN-Signal '+('—' if signal is None else f'{signal:.0f}')+' %'
-        elif connection=='ethernet':text+=' · LAN'
-        elif connection=='vpn':text+=' · VPN'
+        link={'wlan':'WLAN-Signal '+('—' if signal is None else f'{signal:.0f}')+' %','ethernet':'LAN','vpn':'VPN'}.get(connection,'')
         self.mini_ping.set_text(text)
-        def rate(value):
-            if value is None:return '—'
-            if value>=1024**2:return f'{value/1024**2:.1f} MiB/s'
-            if value>=1024:return f'{value/1024:.0f} KiB/s'
-            return f'{value:.0f} B/s'
-        transfer=f"↓ {rate(data.get('rx_bytes_sec'))}   ·   ↑ {rate(data.get('tx_bytes_sec'))}"
+        self.mini_signal.set_text(link)
+        transfer=f"↓ {rate(data.get('rx_bytes_sec'))}   ↑ {rate(data.get('tx_bytes_sec'))}"
         self.mini_transfer.set_text(transfer)
         self.mini_transfer.set_tooltip_text('Empfang / Versand über die aktive Verbindung · Durchschnitt seit der letzten Messung')
         gateway=f'{router:.0f} ms' if router is not None else 'keine Antwort'
         loss=data.get('loss_percent')
-        detail=f"{data.get('interface') or 'Keine Verbindung'} · Router {gateway} · {text}"
+        detail=f"{data.get('interface') or 'Keine Verbindung'} · Router {gateway} · {text}"+(f' · {link}' if link else '')
         if loss is not None:detail+=f' · ICMP-Verlust {loss:.0f} %'
         detail+='\n'+transfer
         self.network_detail.set_text(detail)
@@ -667,19 +778,33 @@ class AirWindow(Gtk.ApplicationWindow):
         return False
 
     def check_alarms(self):
-        hot=any(self.latest.get(k) is not None and self.latest[k]>=85 for k in ('cpu','gpu'))
+        # Hysterese: Alarm ab Grenzwert, Entwarnung erst 5 °C darunter – kein Benachrichtigungs-Flattern.
+        for key,(warn,hot) in LIMITS.items():
+            value=self.latest.get(key)
+            if value is None:continue
+            if value>=hot:self.hot_keys.add(key)
+            elif value<hot-HYSTERESIS:self.hot_keys.discard(key)
+        warm=any(self.latest.get(k) is not None and self.latest[k]>=LIMITS[k][0] for k in LIMITS)
         missing=self.latest.get('cpu') is None or self.latest.get('gpu') is None
-        alarm='Temperatur hoch' if hot else 'Sensordaten fehlen' if missing else None
-        if alarm:
-            self.mini_live.set_text('TEMPERATUR' if hot else 'DATEN FEHLEN')
-            self.mini_live.get_style_context().add_class('warning')
-        else:self.mini_live.get_style_context().remove_class('warning')
+        names=dict(TEMP_TITLES)
+        alarm=('Temperatur hoch: '+', '.join(names[k] for k in LIMITS if k in self.hot_keys)) if self.hot_keys else 'Sensordaten fehlen' if missing else None
+        state,text=(('state-hot','HEISS') if self.hot_keys else ('state-missing','DATEN FEHLEN') if missing
+                    else ('state-warn','WARM') if warm else ('state-ok','LIVE'))
+        context=self.mini_live.get_style_context()
+        for name in ('state-ok','state-warn','state-hot','state-missing'):
+            if name!=state:context.remove_class(name)
+        context.add_class(state);self.mini_live.set_text(text)
         if alarm and alarm!=self.alarm_state:
             app=self.get_application()
             if app:
                 notification=Gio.Notification.new('Restlos Air · '+alarm)
-                notification.set_body('Klicke auf das Widget, um die Messwerte und Regelung zu prüfen.')
+                details=', '.join(f'{names[k]} {self.latest[k]:.0f} °C' for k in LIMITS if self.latest.get(k) is not None)
+                notification.set_body(details+'. Klicke auf das Widget, um Messwerte und Regelung zu prüfen.')
+                notification.set_priority(Gio.NotificationPriority.URGENT if self.hot_keys else Gio.NotificationPriority.NORMAL)
                 app.send_notification('temperature',notification)
+        elif not alarm and self.alarm_state:
+            app=self.get_application()
+            if app:app.withdraw_notification('temperature')
         self.alarm_state=alarm
 
 

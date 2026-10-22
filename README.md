@@ -4,7 +4,7 @@
 [![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-blue.svg)](LICENSE)
 
 Ein kleines Temperatur- und Lüfter-Widget für Zorin OS. Restlos Air zeigt CPU, GPU,
-Hotspot, Pumpendrehzahl, Auslastung, Speicherverbrauch und WLAN-Daten auf einem zweiten Bildschirm. Ein Klick auf die
+GPU-Hotspot, SSD, Pumpendrehzahl, Auslastung, Speicherverbrauch und WLAN-Daten auf einem zweiten Bildschirm. Ein Klick auf die
 Werte öffnet **Air Studio** mit den Einstellungen. Die Anwendung verwendet GTK 3
 und den vorhandenen CoolerControl-Dienst.
 
@@ -17,18 +17,21 @@ Gerätewechsel. Beide Widgets teilen sich einen Prozess und das Tray-Symbol.
 
 Die Abbildungen zeigen die echte Oberfläche mit Beispielwerten.
 
-[Download Version 1.1.1](https://github.com/jurkast/restlos-air/releases/tag/v1.1.1)
+[Download Version 1.2.0](https://github.com/jurkast/restlos-air/releases/tag/v1.2.0)
 · [Fehler melden](https://github.com/jurkast/restlos-air/issues)
 
 ## Funktionen
 
 - Rahmenloses Widget und Tray-Symbol, ohne normalen Taskleisteneintrag.
 - Automatischer Start des Widgets beim Anmelden.
-- CPU-, GPU- und Hotspot-Temperaturen; Lüfter- und Pumpendrehzahlen im Studio.
+- Kompaktes Widget (300 px breit) im Restlos-Design: vier Temperaturkacheln, Lastbalken und Statusanzeige.
+- CPU-, GPU-, Hotspot- und NVMe-SSD-Temperaturen; Lüfter- und Pumpendrehzahlen im Studio.
+- Farbstufen und Alarm mit Hysterese; Warnungen kommen auch bei ausgeblendetem Widget.
+- „Im Vordergrund“ lässt sich abschalten, damit das Widget unter Vollbild-Spielen bleibt.
 - Manuelle Lüfterleistung von 40 bis 100 % und drei editierbare Kennlinienpunkte.
 - CPU-, GPU- oder gemeinsamer Kühlbedarf als Kennlinienquelle; 100 % spätestens bei 85 °C.
 - Wiederherstellung der gesicherten vorherigen Regelung.
-- Ping zum Router und zu 1.1.1.1; Anzeige des ICMP-Paketverlusts im Studio.
+- Ping zum Router und zu 1.2.0.1; Anzeige des ICMP-Paketverlusts im Studio.
 - Bildschirmwahl, Position und Anschlussnamen im Benutzerprofil.
 - CPU-/GPU-Auslastung sowie verwendeter/gesamter RAM und Grafikspeicher.
 - Aktive WLAN-Signalstärke und Empfangs-/Senderate der Standardverbindung.
@@ -65,12 +68,12 @@ benötigt NetworkManager mit `nmcli`; ohne diesen Dienst bleiben Ping und Datenr
    einrichten. Sein Dienst muss die Hardware erkennen. Restlos Air richtet selbst
    kein fremdes Paketrepository ein.
 2. Das `.deb` und die `.deb.sha256` von der
-   [Release-Seite](https://github.com/jurkast/restlos-air/releases/tag/v1.1.1) herunterladen.
+   [Release-Seite](https://github.com/jurkast/restlos-air/releases/tag/v1.2.0) herunterladen.
 3. Im Downloadordner prüfen und installieren:
 
 ```bash
-sha256sum -c restlos-air_1.1.1_all.deb.sha256
-sudo apt install ./restlos-air_1.1.1_all.deb
+sha256sum -c restlos-air_1.2.0_all.deb.sha256
+sudo apt install ./restlos-air_1.2.0_all.deb
 restlos-air
 ```
 
@@ -84,6 +87,18 @@ Falls eine Verbindung erforderlich ist, **Steuerung verbinden** im Studio öffne
 und das CoolerControl-Passwort im lokalen Dialog eingeben. Der eigene API-Zugang
 liegt im Linux-Schlüsselbund; Passwort und Zugangsschlüssel stehen nicht in den
 Einstellungsdateien. Die Verbindung geht an `127.0.0.1:11987`.
+
+## Grenzwerte
+
+| Sensor | Gelb ab | Rot / Benachrichtigung ab |
+|---|---|---|
+| CPU (`k10temp` Tctl) | 75 °C | 85 °C |
+| GPU (Kante) | 75 °C | 85 °C |
+| GPU-Hotspot (Junction) | 90 °C | 100 °C |
+| SSD (NVMe) | 60 °C | 70 °C |
+
+Eine Warnung endet erst 5 °C unter dem Alarmwert. Die Statusplakette im Widget zeigt
+LIVE, WARM, HEISS oder DATEN FEHLEN.
 
 ## Bedienung
 
@@ -127,7 +142,7 @@ Ereignisse und Reglerbewegungen werden gebündelt; es gibt keine periodische
 Audioabfrage im normalen Betrieb. Bei Ausfall wird mit wachsendem Abstand erneut
 verbunden. Audio und Lüftersteuerung haben getrennte Hintergrundaufgaben.
 
-Alle fünf Sekunden wird je ein kleines ICMP-Paket zum Gateway und zu `1.1.1.1`
+Alle fünf Sekunden wird je ein kleines ICMP-Paket zum Gateway und zu `1.2.0.1`
 gesendet. Das ist kein automatischer Spielserver-Ping. Paketverlust bezieht sich auf
 die letzten bis zu zwölf Internetproben. „Keine Antwort“ kann eine ICMP-Sperre
 bedeuten und beweist keinen Internetausfall. Die App führt keine WLAN-Scans durch.
