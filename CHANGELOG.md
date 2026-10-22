@@ -1,5 +1,10 @@
 # Änderungen
 
+## 1.5.2 – 2026-10-22
+
+- Leiste bleibt fest an der gewählten Kante: Die Seitenleiste wird höchstens breiter, nie schmaler, und rückt bei wechselnden Werten nicht mehr hin und her.
+- Gewählte Kante und Monitor bleiben nach Neustart und Update erhalten; der Monitor wird über Modell und Position erkannt, auch bei zwei gleichen Bildschirmen.
+
 ## 1.5.1 – 2026-10-22
 
 - Leiste oben/unten läuft jetzt über die ganze Monitorbreite. Vorher wurde der Arbeitsbereich des Monitors verwendet, der auf X11 beim zweiten Monitor oft nur einen Teil abdeckt; dadurch fehlten auch Pumpe, Ping und Datenrate („…“).

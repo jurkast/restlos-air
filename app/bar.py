@@ -82,7 +82,11 @@ class BarWindow(Gtk.Window):
         self.owner = owner
         self.edge = edge if edge in EDGES else 'bottom'
         self.reserve = reserve
+        # Breite der Seitenleiste wächst höchstens, schrumpft nie: sonst rückt die rechte
+        # Leiste bei jeder Wertänderung ein paar Pixel hin und her.
+        self.locked_width = 0
         self.set_decorated(False)
+        self.set_resizable(False)
         self.set_skip_taskbar_hint(True)
         self.set_skip_pager_hint(True)
         self.set_type_hint(Gdk.WindowTypeHint.DOCK)
@@ -193,6 +197,8 @@ class BarWindow(Gtk.Window):
     def configure(self, edge: str, reserve: bool) -> None:
         changed = edge != self.edge
         self.edge = edge if edge in EDGES else 'bottom'
+        if changed:
+            self.locked_width = 0
         self.reserve = reserve
         if changed:
             self.build()
@@ -220,7 +226,7 @@ class BarWindow(Gtk.Window):
             # Real fonts can be wider than the design width; measure, never overflow the screen edge.
             child = self.get_child()
             natural = child.get_preferred_width()[1] if child is not None else 0
-            width, height = min(max(SIDE_WIDTH, natural), area.width // 3), area.height
+            width, height = min(max(SIDE_WIDTH, natural, self.locked_width), area.width // 3), area.height
             x = area.x if self.edge == 'left' else area.x + area.width - width
             return x, area.y, width, height
         height = THICKNESS
@@ -229,6 +235,8 @@ class BarWindow(Gtk.Window):
 
     def place(self) -> None:
         x, y, width, height = self.geometry()
+        if self.vertical:
+            self.locked_width = width
         self.set_size_request(width, height)
         self.resize(width, height)
         self.move(x, y)

@@ -658,12 +658,17 @@ class AirWindow(Gtk.ApplicationWindow):
 
     def refresh_monitors(self):
         self.monitor.handler_block_by_func(self.monitor_changed)
-        self.monitor.remove_all();d=Gdk.Display.get_default();selected=0
-        desired=self.settings.get('monitor')
+        self.monitor.remove_all();d=Gdk.Display.get_default()
+        desired=self.settings.get('monitor');position=self.settings.get('monitor_pos')
+        exact=by_model=secondary=None
         for i in range(d.get_n_monitors()):
             m=d.get_monitor(i);g=m.get_geometry();model=m.get_model() or f'Monitor {i+1}'
             self.monitor.append(str(i),f'{model} · {g.width} × {g.height}')
-            if model==desired or (desired is None and not m.is_primary()):selected=i
+            # Modell + Position identifiziert den Monitor auch bei zwei gleichen Modellen eindeutig.
+            if model==desired and position==[g.x,g.y] and exact is None:exact=i
+            if model==desired and by_model is None:by_model=i
+            if not m.is_primary() and secondary is None:secondary=i
+        selected=next((i for i in (exact,by_model,secondary) if i is not None),0)
         self.monitor.set_active(selected);self.monitor.handler_unblock_by_func(self.monitor_changed)
         GLib.idle_add(self.place)
 
@@ -671,7 +676,9 @@ class AirWindow(Gtk.ApplicationWindow):
         self.geometries.clear()
         self.place()
         i=self.monitor.get_active();d=Gdk.Display.get_default()
-        if 0<=i<d.get_n_monitors():self.settings['monitor']=d.get_monitor(i).get_model();self.save()
+        if 0<=i<d.get_n_monitors():
+            g=d.get_monitor(i).get_geometry()
+            self.settings['monitor']=d.get_monitor(i).get_model();self.settings['monitor_pos']=[g.x,g.y];self.save()
 
     def place(self):
         d=Gdk.Display.get_default();i=self.monitor.get_active()
