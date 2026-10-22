@@ -348,7 +348,7 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertEqual(height, 34)
         self.window.edge_combo.set_active_id('right')
         self.assertTrue(self.window.bar.vertical)
-        self.assertEqual(self.window.bar.geometry()[2], 124)
+        self.assertGreaterEqual(self.window.bar.geometry()[2], 124)  # measured; wider system fonts are allowed
         self.window.show_view(False)
         self.assertTrue(self.window.get_visible())
         self.assertFalse(self.window.compact)
