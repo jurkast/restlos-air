@@ -28,6 +28,7 @@ Die Abbildungen zeigen die echte Oberfläche mit Beispielwerten.
 - CPU-, GPU-, Hotspot- und NVMe-SSD-Temperaturen; Lüfter- und Pumpendrehzahlen im Studio.
 - Farbstufen und Alarm mit Hysterese; Warnungen kommen auch bei ausgeblendetem Widget.
 - „Im Vordergrund“ lässt sich abschalten, damit das Widget unter Vollbild-Spielen bleibt.
+- Alternativ als **Leiste** oben, unten, links oder rechts am Bildschirmrand – praktisch für einen zweiten Monitor ohne Taskleiste.
 - Manuelle Lüfterleistung von 40 bis 100 % und drei editierbare Kennlinienpunkte.
 - CPU-, GPU- oder gemeinsamer Kühlbedarf als Kennlinienquelle; 100 % spätestens bei 85 °C.
 - Wiederherstellung der gesicherten vorherigen Regelung.
@@ -87,6 +88,15 @@ Falls eine Verbindung erforderlich ist, **Steuerung verbinden** im Studio öffne
 und das CoolerControl-Passwort im lokalen Dialog eingeben. Der eigene API-Zugang
 liegt im Linux-Schlüsselbund; Passwort und Zugangsschlüssel stehen nicht in den
 Einstellungsdateien. Die Verbindung geht an `127.0.0.1:11987`.
+
+## Widget oder Leiste
+
+Im Studio unter **Warnungen & Widget → Ansicht** zwischen *Widget* (frei verschiebbar) und *Leiste*
+wählen. Die Leiste liegt auf dem gewählten Bildschirm oben, unten (34 px hoch) oder links/rechts
+(124 px breit), bleibt auf allen Arbeitsflächen sichtbar und zeigt Temperaturen, Last, RAM/VRAM,
+Pumpe, Ping und Datenrate. Ein Klick öffnet das Studio. Mit **Platz freihalten** enden maximierte
+Fenster an der Leiste (X11). Liegt die Leiste an einer Kante, an die ein anderer Monitor grenzt,
+kann die Fensterverwaltung diesen Platz ignorieren; die Leiste bleibt trotzdem sichtbar.
 
 ## Grenzwerte
 

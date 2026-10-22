@@ -334,5 +334,38 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertIn('git pull', self.window.update_info.get_text())
 
 
+    def test_bar_view_replaces_widget_and_opens_studio(self):
+        self.window.view_combo.set_active_id('bar')
+        self.drain()
+        self.assertEqual(self.window.settings['view_mode'], 'bar')
+        self.assertTrue(self.window.bar_visible())
+        self.assertFalse(self.window.get_visible())
+        self.window.metrics_last = 0; self.window.update()
+        self.assertEqual(self.window.bar.temps['cpu'].get_text(), '41°')
+        self.assertEqual(self.window.bar.loads['gpu'].get_text(), '37 %')
+        self.assertEqual(self.window.bar.memory['ram'][0].get_text(), '8,0/32 GiB')
+        x, y, width, height = self.window.bar.geometry()
+        self.assertEqual(height, 34)
+        self.window.edge_combo.set_active_id('right')
+        self.assertTrue(self.window.bar.vertical)
+        self.assertEqual(self.window.bar.geometry()[2], 124)
+        self.window.show_view(False)
+        self.assertTrue(self.window.get_visible())
+        self.assertFalse(self.window.compact)
+        self.window.set_compact(True)
+        self.assertFalse(self.window.get_visible())
+        self.assertTrue(self.window.bar_visible())
+        self.window.view_combo.set_active_id('widget')
+        self.assertFalse(self.window.bar_visible())
+
+    def test_strut_values_follow_the_edge(self):
+        import bar
+        self.assertEqual(bar.strut_values('bottom', 1920, 1046, 1920, 34, 3840, 1080)[3], 34)
+        self.assertEqual(bar.strut_values('bottom', 1920, 1046, 1920, 34, 3840, 1080)[10:], [1920, 3839])
+        self.assertEqual(bar.strut_values('top', 0, 0, 1920, 34, 3840, 1080)[2], 34)
+        self.assertEqual(bar.strut_values('right', 3716, 0, 124, 1080, 3840, 1080)[1], 124)
+        self.assertEqual(bar.strut_values('left', 1920, 0, 124, 1080, 3840, 1080)[0], 2044)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

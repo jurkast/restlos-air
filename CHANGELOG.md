@@ -1,5 +1,12 @@
 # Änderungen
 
+## 1.5.0 – 2026-10-22
+
+- Neue Ansicht **Leiste**: Restlos Air als Taskleiste oben, unten, links oder rechts am gewählten Bildschirm.
+- Zeigt CPU/GPU mit Last, Hotspot, SSD, RAM/VRAM-Balken, Pumpe, Ping, Datenrate, Status und UPDATE.
+- „Platz freihalten“ reserviert den Bereich, damit maximierte Fenster nicht darüber liegen (X11).
+- Umschalten im Studio unter „Warnungen & Widget → Ansicht“; Tray-Menü blendet Widget oder Leiste ein/aus.
+
 ## 1.4.0 – 2026-10-22
 
 - Automatische, signierte Updates wie bei Restlos Bewerbung und Uninstaller: stündliche Prüfung,
