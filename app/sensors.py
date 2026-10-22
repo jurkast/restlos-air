@@ -99,6 +99,35 @@ def snapshot(root=Path('/sys/class/hwmon'), include_curves=True, include_fans=Tr
     return result
 
 
+def extras(root=Path('/sys/class/hwmon')):
+    """GPU power and clock plus labelled mainboard temperatures (Studio and bar only).
+
+    Unconnected NCT inputs report 0 °C, −1 °C or 127 °C; those are dropped.
+    """
+    devices = discover(root)
+    gpu = devices.get('amdgpu')
+    power = None
+    if gpu is not None:
+        microwatts = number(gpu / 'power1_average')
+        if microwatts is None:
+            microwatts = number(gpu / 'power1_input')
+        power = microwatts / 1e6 if microwatts is not None and 0 < microwatts < 2e9 else None
+    clock = number(gpu / 'freq1_input') if gpu is not None else None
+    board = []
+    chip = devices.get('nct6798')
+    if chip is not None:
+        for path in sorted(chip.glob('temp*_input'), key=lambda item: int(item.name[4:].split('_')[0] or 0)):
+            value = number(path)
+            if value is None or not 5000 <= value <= 115000:
+                continue
+            try:
+                name = path.with_name(path.name.replace('_input', '_label')).read_text().strip()
+            except OSError:
+                name = path.name.split('_')[0]
+            board.append((name, value / 1000))
+    return {'gpu_power_w': power, 'gpu_clock_mhz': clock / 1e6 if clock else None, 'board': board}
+
+
 def cached_pump(status_data, board_uid, now=None):
     """Read a fresh, uniquely identified pump RPM from CoolerControl's cache."""
     if not isinstance(status_data, dict) or not isinstance(board_uid, str) or not board_uid:

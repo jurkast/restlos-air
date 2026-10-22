@@ -12,11 +12,16 @@ from pathlib import Path
 import gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('Gdk', '3.0')
-from gi.repository import Gtk, Gdk, Gio, GLib
+from gi.repository import Gtk, Gdk, Gio, GLib, Pango
 from sensors import snapshot, cached_pump
 from metrics import MetricsSampler
 from coolercontrol import BackendError, Client, secret_store, validate_curve
 from version import __version__
+from processes import ProcessScanner
+from history import History
+import profiles
+import panels
+from sensors import extras as read_extras
 
 BASE = Path(__file__).resolve().parent
 COMPACT_WIDTH = 300
@@ -67,7 +72,7 @@ button.primary { color: #ffffff; background-color: #167c77; border-color: #167c7
 button.primary:hover { background-color: #1b8f89; }
 button.mini-content { background-color: transparent; border-color: transparent; padding: 4px; border-radius: 12px; }
 button.mini-content:hover { background-color: rgba(36,70,82,0.45); border-color: transparent; }
-button.mini-close { background-color: transparent; border-color: transparent; padding: 0 6px; min-height: 18px; min-width: 18px; color: #a6bbc5; }
+button.mini-close { background-color: transparent; border-color: transparent; padding: 0 4px; min-height: 18px; min-width: 18px; color: #a6bbc5; }
 button.mini-close:hover { color: #ffffff; background-color: #244652; }
 button.fan { background-color: transparent; border-color: transparent; padding: 9px 12px; }
 button.fan:checked { background-color: #244652; }
@@ -82,6 +87,8 @@ check:checked { background-color: #167c77; border-color: #167c77; color: #ffffff
 menu, .menu { background-color: #20323e; color: #e3edef; }
 button.update-pill { background-color: #167c77; border-color: #167c77; color: #ffffff; border-radius: 999px; padding: 0 8px; min-height: 16px; font-size: 9px; font-weight: 800; letter-spacing: 1px; }
 button.update-pill:hover { background-color: #1b8f89; }
+button.profile-pill { background-color: #244652; border-color: #244652; color: #9bf1dc; border-radius: 999px; padding: 0 8px; min-height: 16px; font-size: 9px; font-weight: 800; letter-spacing: 1px; }
+button.profile-pill:hover { border-color: #6ce0c3; }
 #bar-surface { background-color: rgba(21,35,46,0.96); }
 #bar-surface.bar-bottom { border-top: 1px solid #2b404b; }
 #bar-surface.bar-top { border-bottom: 1px solid #2b404b; }
@@ -215,6 +222,45 @@ class Chart(Gtk.DrawingArea):
         return False
 
 
+class Spark(Gtk.DrawingArea):
+    """Last minute of one temperature as a thin line inside its tile."""
+    def __init__(self, owner, key):
+        super().__init__()
+        self.owner, self.key = owner, key
+        self.set_size_request(-1, 12)
+        self.connect('draw', self.draw)
+
+    def draw(self, widget, cr):
+        values = [v for v in self.owner.sparks.get(self.key, ()) if v is not None]
+        w, h = self.get_allocated_width(), self.get_allocated_height()
+        if len(values) < 2 or w < 4:
+            return False
+        low, high = min(values) - 2, max(values) + 2
+        colors = {'level-ok': (.42, .88, .76), 'level-warn': (.95, .73, .47), 'level-hot': (1, .57, .52)}
+        if THEME['light']:
+            colors = {'level-ok': (.09, .49, .47), 'level-warn': (.6, .39, 0), 'level-hot': (.71, .18, .15)}
+        cr.set_source_rgb(*colors[level(self.key, values[-1], self.owner.limits)])
+        cr.set_line_width(1.4)
+        step = w / (len(values) - 1)
+        for index, value in enumerate(values):
+            x, y = index * step, h - 1 - (value - low) / (high - low) * (h - 2)
+            if index:cr.line_to(x, y)
+            else:cr.move_to(x, y)
+        cr.stroke()
+        return False
+
+
+THEME = {'light': False}
+
+
+def SETTINGS_THEME():
+    try:
+        data=json.loads(SETTINGS.read_text())
+        return data.get('theme','dark') if isinstance(data,dict) else 'dark'
+    except (OSError,ValueError):
+        return 'dark'
+
+
 class AirWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app, title='Restlos Air Studio')
@@ -251,6 +297,17 @@ class AirWindow(Gtk.ApplicationWindow):
         self.view_mode = 'bar' if self.settings.get('view_mode') == 'bar' else 'widget'
         self.bar = None
         self.limit_tips = {}
+        self.scanner = ProcessScanner()
+        self.top = []
+        self.game = None
+        self.process_last = 0
+        self.history_store = History()
+        self.history_last = 0
+        self.extras = {}
+        self.extras_last = 0
+        self.sparks = {key: deque(maxlen=60) for key,_ in TEMP_TITLES}
+        self.profile = self.settings.get('fan_profile') if self.settings.get('fan_profile') in profiles.PROFILES else None
+        self.game_mode = profiles.GameMode(enabled=self.settings.get('game_mode',True) is not False)
         self.auth_window = None
         self.closed = False
         self.geometries = self.settings.get('geometries', {})
@@ -310,11 +367,15 @@ class AirWindow(Gtk.ApplicationWindow):
         add(history_box,label('Temperaturen · letzte 2 Minuten','muted'))
         self.history_chart=add(history_box,Chart(True))
         add(history_box,label('CPU: Mint     GPU: Blau','muted'))
+        self.history_panel=panels.HistoryPanel(self,content)
         load_box=box(spacing=6);load_box.get_style_context().add_class('panel');add(content,load_box)
         add(load_box,label('Auslastung & Speicher','section'))
         self.load_detail=add(load_box,label('Messung startet …','muted'));self.load_detail.set_line_wrap(True)
         audio_button=Gtk.Button(label='Audio-Widget öffnen')
         audio_button.connect('clicked',lambda *_:self.get_application().show_audio());add(load_box,audio_button)
+        self.process_panel=panels.ProcessPanel(self,content)
+        self.board_panel=panels.BoardPanel(self,content)
+        self.profile_panel=panels.ProfilePanel(self,content)
         fan_head=box(False);add(content,fan_head)
         add(fan_head,label('Lüfter & Wasserpumpe','section'),True)
         self.show_zero=Gtk.CheckButton(label='0 U/min anzeigen');self.show_zero.connect('toggled',lambda *_:self.update());add(fan_head,self.show_zero)
@@ -329,6 +390,8 @@ class AirWindow(Gtk.ApplicationWindow):
         self.curve_note=add(self.detail,label('','muted'));self.curve_note.set_line_wrap(True)
         self.build_control_panel()
         self.build_settings_panel(content)
+        self.bar_items_panel=panels.BarItemsPanel(self,content)
+        self.appearance_panel=panels.AppearancePanel(self,content)
         network_box=box(spacing=8);network_box.get_style_context().add_class('panel');add(content,network_box)
         add(network_box,label('WLAN & Verbindung','section'))
         self.network_detail=add(network_box,label('Verbindung wird geprüft …','muted'));self.network_detail.set_line_wrap(True)
@@ -391,12 +454,15 @@ class AirWindow(Gtk.ApplicationWindow):
         mini=box(spacing=8);mini.set_name('mini-surface')
         for side in ('top','bottom','start','end'):getattr(mini,'set_margin_'+side)(0)
         self.stack.add_named(mini,'compact')
-        header=box(False,6)
-        header.set_margin_top(10);header.set_margin_start(14);header.set_margin_end(8)
+        header=box(False,4)
+        header.set_margin_top(10);header.set_margin_start(12);header.set_margin_end(4)
         drag=Gtk.EventBox();drag.add(label('RESTLOS AIR','eyebrow'))
         drag.connect('button-press-event',self.drag)
         drag.set_tooltip_text('Ziehen zum Verschieben · Strg+M wechselt die Ansicht')
         add(header,drag,True)
+        self.mini_profile=Gtk.Button(label=profiles.title(self.profile).upper());self.mini_profile.get_style_context().add_class('profile-pill')
+        self.mini_profile.set_valign(Gtk.Align.CENTER);self.mini_profile.set_tooltip_text('Lüfterprofil wechseln: Leise → Normal → Spiel')
+        self.mini_profile.connect('clicked',lambda *_:self.cycle_profile());add(header,self.mini_profile)
         self.mini_live=add(header,label('LIVE','pill'));self.mini_live.set_valign(Gtk.Align.CENTER)
         self.mini_live.get_style_context().add_class('state-ok')
         self.mini_update=Gtk.Button(label='UPDATE');self.mini_update.get_style_context().add_class('update-pill')
@@ -425,7 +491,8 @@ class AirWindow(Gtk.ApplicationWindow):
             head=add(tile,label(title,'tile-head'));value=add(tile,label('—','tile-value'))
             # GTK-3-Boxen ignorieren CSS-Padding; Innenabstand daher über Label-Ränder.
             for item in (head,value):item.set_margin_start(7);item.set_margin_end(5)
-            head.set_margin_top(5);value.set_margin_bottom(3)
+            head.set_margin_top(5)
+            spark=add(tile,Spark(self,key));spark.set_margin_start(6);spark.set_margin_end(6);spark.set_margin_bottom(5)
             self.mini_temps[key]=value
             tiles.attach(tile,column,0,1,1)
         # Name · Balken · Wert, damit Last und Speicher auf einen Blick vergleichbar sind.
@@ -449,6 +516,9 @@ class AirWindow(Gtk.ApplicationWindow):
         self.mini_signal=label('','info',xalign=1)
         info.attach(self.mini_pump,0,0,1,1);info.attach(self.mini_ping,1,0,1,1)
         info.attach(self.mini_transfer,0,1,1,1);info.attach(self.mini_signal,1,1,1,1)
+        self.mini_top=label('Top · —','info');self.mini_top.set_ellipsize(Pango.EllipsizeMode.END)
+        self.mini_top.set_tooltip_text('Programm mit der höchsten CPU-Last · Details im Studio')
+        info.attach(self.mini_top,0,2,2,1)
         add(mini,self.open_studio)
 
     def build_update_panel(self,content):
@@ -586,6 +656,7 @@ class AirWindow(Gtk.ApplicationWindow):
 
     def cleanup(self,*_):
         self.closed = True
+        self.history_store.flush()
         if self.bar:self.bar.destroy();self.bar=None
         GLib.source_remove(self.timer)
         self.network.stop()
@@ -611,7 +682,12 @@ class AirWindow(Gtk.ApplicationWindow):
         GLib.idle_add(self.refresh_bar_hint)
 
     def push_bar(self):
-        if self.bar_visible():self.bar.show_values(self)
+        if self.bar_visible():
+            app=self.get_application()
+            # Audio in der Leiste braucht den Audiodienst auch bei ausgeblendetem Audio-Widget.
+            if 'audio' in self.bar.items and hasattr(app,'ensure_audio') and not app.audio_window:
+                app.ensure_audio()
+            self.bar.show_values(self)
 
     def refresh_bar_hint(self):
         visible=self.bar_visible()
@@ -747,7 +823,9 @@ class AirWindow(Gtk.ApplicationWindow):
             self.latest['fans']=self.fan_cache
         # Überhitzung muss auch bei ausgeblendetem Widget gemeldet werden.
         self.check_alarms()
+        self.background_tasks(now,hidden)
         if hidden:return True
+        for key in self.sparks:self.sparks[key].append(self.latest.get(key))
         if now-self.backend_last>=10 and not self.backend_busy:
             self.backend_last=now;self.refresh_backend()
         # UI changes must not manufacture additional time samples.
@@ -763,6 +841,14 @@ class AirWindow(Gtk.ApplicationWindow):
             self.metrics_last=now
             self.metrics_state=self.metrics_sampler.sample()
             self.update_metrics()
+        if now-self.extras_last>=2 and (not self.compact or self.bar_visible()):
+            self.extras_last=now
+            try:self.extras=read_extras()
+            except OSError:self.extras={}
+            if not self.compact:self.board_panel.refresh(self.extras,self.metrics_state)
+        self.mini_top.set_text(self.top_text())
+        if self.compact:
+            for spark_owner in self.mini_temps.values():spark_owner.get_parent().queue_draw()
         self.push_bar()
         if self.compact:return True
         self.history_chart.data=[[(t-now,cpu) for t,cpu,gpu in self.history],[(t-now,gpu) for t,cpu,gpu in self.history]];self.history_chart.queue_draw()
@@ -784,6 +870,81 @@ class AirWindow(Gtk.ApplicationWindow):
         self.status.set_text('● Live · '+time.strftime('%H:%M:%S') if self.latest['mainboard'] else 'Mainboard-Sensor fehlt · nct6775 ist möglicherweise nicht geladen')
         self.update_detail()
         return True
+
+    def background_tasks(self,now,hidden):
+        # Verlauf läuft immer mit (billig: nur Speicher, eine Zeile alle 5 Minuten auf die Platte).
+        self.history_store.add(self.latest,self.metrics_state.get('cpu_percent'),self.top[0].name if self.top else None,self.game)
+        interval=3 if not hidden else (10 if self.game_mode.enabled else None)
+        if interval and now-self.process_last>=interval:
+            self.process_last=now
+            self.top=self.scanner.sample();self.game=self.scanner.game
+            target=self.game_mode.decide(self.game,self.profile,now)
+            if target:self.set_profile(target,automatic=True)
+            if not hidden and not self.compact:
+                self.process_panel.refresh(self.top);self.profile_panel.refresh()
+        if not hidden and not self.compact and now-self.history_last>=30:
+            self.history_last=now;self.history_panel.refresh(self.history_store)
+
+    def top_text(self):
+        if not self.top:return 'Top · —'
+        item=self.top[0]
+        return f'Top · {item.name} {item.cpu_percent:.0f} % · {panels.memory_text(item.memory_bytes)}'
+
+    def audio_state(self):
+        audio=getattr(self.get_application(),'audio_window',None)
+        return audio.state if audio is not None else {}
+
+    def audio_action(self,kind,value=None):
+        app=self.get_application()
+        if app is None or not hasattr(app,'ensure_audio'):return
+        audio=app.ensure_audio()
+        if kind=='mute':audio.action(audio.monitor.toggle_output_mute)
+        elif kind=='mic':audio.action(audio.monitor.toggle_mic_mute)
+        elif kind=='volume':
+            current=audio.state.get('volume_percent') or 0
+            audio.volume.set_value(max(0,min(100,current+value)))
+
+    def cycle_profile(self):
+        self.set_profile(profiles.next_profile(self.profile))
+
+    def set_profile(self,key,automatic=False):
+        if self.backend_busy:return
+        if not self.controller or not self.backend_state.get('connected'):
+            message='Für Profile zuerst im Studio „Steuerung verbinden“.'
+            self.profile_panel.refresh(message);self.control_feedback.set_text(message)
+            if not automatic:self.set_compact(False)
+            return
+        self.backend_busy=True
+        self.profile_panel.refresh('Wird angewendet …')
+        future=self.executor.submit(profiles.apply_profile,self.controller,key)
+        def completed(f):
+            try:result=f.result();error=None
+            except Exception as e:result=None;error=str(e)
+            GLib.idle_add(self.profile_done,key,result,error,automatic)
+        future.add_done_callback(completed)
+
+    def profile_done(self,key,result,error,automatic):
+        if self.closed:return False
+        self.backend_busy=False
+        if error:
+            self.profile_panel.refresh('Profil nicht angewendet: '+error)
+            if self.controller:self.backend_state=self.controller.status()
+        else:
+            self.profile=key;self.settings['fan_profile']=key;self.save()
+            if isinstance(result,dict):self.backend_state=result
+            self.editor_channel=None
+            self.profile_panel.refresh(('Spielmodus: ' if automatic else '')+profiles.title(key)+' aktiv.')
+            if automatic:
+                app=self.get_application()
+                if app:
+                    note=Gio.Notification.new('Restlos Air · Lüfterprofil '+profiles.title(key))
+                    note.set_body(f'{self.game} erkannt.' if key=='game' and self.game else 'Spiel beendet, vorheriges Profil wieder aktiv.')
+                    app.send_notification('profile',note)
+        self.mini_profile.set_label(profiles.title(self.profile).upper())
+        self.backend_last=0
+        self.push_bar()
+        if not self.compact:self.update_detail()
+        return False
 
     def show_pump(self,rpm):
         self.mini_pump.set_text('Pumpe · '+('—' if rpm is None else de(rpm,0))+' U/min')
@@ -923,6 +1084,9 @@ class AirWindow(Gtk.ApplicationWindow):
             if message:
                 self.control_feedback.set_text(message)
                 self.editor_channel=None
+                # Eine Einzelregelung ersetzt das gemeinsame Profil.
+                self.profile=None;self.settings.pop('fan_profile',None);self.save()
+                self.mini_profile.set_label(profiles.title(None).upper());self.profile_panel.refresh()
         if not self.compact:
             if message:
                 self.curve_last=0;self.backend_last=time.monotonic();self.update()
@@ -1022,6 +1186,8 @@ class AirApp(Gtk.Application):
         super().__init__(application_id='de.restlos.AirStudio',flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
         self.add_main_option('compact',0,GLib.OptionFlags.NONE,GLib.OptionArg.NONE,'Widget öffnen',None)
         self.add_main_option('settings',0,GLib.OptionFlags.NONE,GLib.OptionArg.NONE,'Einstellungen öffnen',None)
+        self.add_main_option('toggle',0,GLib.OptionFlags.NONE,GLib.OptionArg.NONE,'Widget oder Leiste ein-/ausblenden',None)
+        self.css_provider=None
         self.window=None
         self.audio_window=None
         self.requested_compact=True
@@ -1049,13 +1215,19 @@ class AirApp(Gtk.Application):
         self.quit_app()
         return False
     def do_command_line(self,command_line):
-        self.requested_compact=not command_line.get_options_dict().contains('settings')
+        options=command_line.get_options_dict()
+        if options.contains('toggle') and self.window:
+            showing=self.window.bar_visible() if self.window.view_mode=='bar' else self.window.get_visible()
+            if showing:self.window.hide_views()
+            else:self.window.show_view(True)
+            return 0
+        self.requested_compact=not options.contains('settings')
         self.activate();return 0
     def do_activate(self):
         if not self.window:
-            css=Gtk.CssProvider();css.load_from_data(CSS)
-            Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(),css,Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+            self.apply_theme(SETTINGS_THEME())
             self.window=AirWindow(self)
+            self.apply_theme()
             self.create_indicator()
             if not self.held:self.hold();self.held=True
             action=Gio.SimpleAction.new('restart-update',None)
@@ -1131,11 +1303,29 @@ class AirApp(Gtk.Application):
         self.withdraw_notification('update')
         self.quit_app()
 
-    def show_audio(self,*_):
+    def ensure_audio(self):
+        """Audio state for the bar without showing the separate audio widget."""
         if not self.audio_window:
             from audio_widget import AudioWindow
             self.audio_window=AudioWindow(self,self.window)
-        self.audio_window.show_widget()
+        return self.audio_window
+
+    def show_audio(self,*_):
+        self.ensure_audio().show_widget()
+
+    def apply_theme(self,choice=None):
+        import theme
+        if choice is None:choice=self.window.settings.get('theme','dark') if self.window else 'dark'
+        light=theme.is_light(choice)
+        THEME['light']=light
+        screen=Gdk.Screen.get_default()
+        if self.css_provider is not None:Gtk.StyleContext.remove_provider_for_screen(screen,self.css_provider)
+        self.css_provider=Gtk.CssProvider();self.css_provider.load_from_data(theme.light_css(CSS) if light else CSS)
+        Gtk.StyleContext.add_provider_for_screen(screen,self.css_provider,Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        if self.window:
+            self.window.history_panel.chart.light=light
+            self.window.queue_draw()
+            if self.window.bar:self.window.bar.queue_draw()
 
     def create_indicator(self):
         try:

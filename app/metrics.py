@@ -18,11 +18,19 @@ def _number(path):
 
 
 class MetricsSampler:
-    def __init__(self, proc_root=Path('/proc'), drm_root=Path('/sys/class/drm')):
+    def __init__(self, proc_root=Path('/proc'), drm_root=Path('/sys/class/drm'), sys_root=Path('/sys'), clock=None):
+        import time
+        self.clock = clock or time.monotonic
         self.proc_root = Path(proc_root)
         self.drm_root = Path(drm_root)
         self._previous_cpu = None
+        self._previous_disk = None
         self.gpu_device = self._discover_gpu()
+        self.sys_root = Path(sys_root)
+        try:
+            self.cpu_freq_files = sorted((self.sys_root / 'devices/system/cpu').glob('cpu[0-9]*/cpufreq/scaling_cur_freq'))
+        except OSError:
+            self.cpu_freq_files = []
 
     @staticmethod
     def _amdgpu(device):
@@ -134,6 +142,35 @@ class MetricsSampler:
         percent = used / total * 100.0 if used is not None and total is not None else None
         return busy, used, total, percent
 
+    def _cpu_clock(self):
+        # Highest current core clock: the number that matters when one game thread is busy.
+        values = [value for value in (_number(path) for path in self.cpu_freq_files) if value]
+        return max(values) / 1000 if values else None
+
+    def _disk(self):
+        """Read/write bytes per second across whole disks (NVMe, SATA, virtio, SD)."""
+        try:
+            lines = (self.proc_root / 'diskstats').read_text(encoding='ascii').splitlines()
+        except (OSError, UnicodeError):
+            self._previous_disk = None
+            return None, None
+        read = written = 0
+        for line in lines:
+            fields = line.split()
+            if len(fields) < 10 or not re.fullmatch(r'nvme[0-9]+n[0-9]+|sd[a-z]+|vd[a-z]+|mmcblk[0-9]+', fields[2]):
+                continue
+            try:
+                read += int(fields[5]) * 512
+                written += int(fields[9]) * 512
+            except ValueError:
+                continue
+        now = self.clock()
+        previous, self._previous_disk = self._previous_disk, (now, read, written)
+        if previous is None or now <= previous[0] or read < previous[1] or written < previous[2]:
+            return None, None
+        elapsed = now - previous[0]
+        return (read - previous[1]) / elapsed, (written - previous[2]) / elapsed
+
     def sample(self):
         """Return current metrics; unsupported or invalid readings are None.
 
@@ -143,7 +180,9 @@ class MetricsSampler:
         cpu = self._cpu()
         ram_used, ram_total, ram_percent = self._ram()
         gpu, vram_used, vram_total, vram_percent = self._gpu()
-        return {'cpu_percent': cpu, 'gpu_percent': gpu,
+        disk_read, disk_write = self._disk()
+        return {'cpu_percent': cpu, 'gpu_percent': gpu, 'cpu_clock_mhz': self._cpu_clock(),
+                'disk_read_bytes_sec': disk_read, 'disk_write_bytes_sec': disk_write,
                 'ram_used_bytes': ram_used, 'ram_total_bytes': ram_total,
                 'ram_percent': ram_percent, 'vram_used_bytes': vram_used,
                 'vram_total_bytes': vram_total, 'vram_percent': vram_percent}

@@ -103,7 +103,29 @@ class BarWindow(Gtk.Window):
     def vertical(self) -> bool:
         return self.edge in ('left', 'right')
 
+    def rebuild(self) -> None:
+        """Rebuild after the item selection changed; keeps the edge."""
+        self.locked_width = 0
+        self.build()
+        if self.get_visible():
+            self.place()
+            self.apply_strut()
+
+    def _info(self, text: str, chars: int) -> Gtk.Label:
+        item = _label(text, 'info')
+        item.set_valign(Gtk.Align.CENTER)
+        if self.vertical:
+            # Schmale Seitenleiste: umbrechen statt abschneiden.
+            item.set_line_wrap(True)
+            item.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
+            item.set_max_width_chars(14)
+        else:
+            item.set_ellipsize(Pango.EllipsizeMode.END)
+            item.set_width_chars(chars)  # Mindestbreite statt „…“
+        return item
+
     def build(self) -> None:
+        from panels import bar_items
         for child in self.get_children():
             child.destroy()
         events = Gtk.EventBox()
@@ -122,50 +144,63 @@ class BarWindow(Gtk.Window):
         head = _label('RESTLOS AIR', 'eyebrow')
         head.set_valign(Gtk.Align.CENTER)
         surface.pack_start(head, False, False, 0)
-        self.temps, self.loads = {}, {}
-        for key, title in METRICS:
-            cell = Gtk.Box(spacing=6)
-            cell.pack_start(_label(title, 'row-name'), False, False, 0)
-            value = _label('—', 'bar-value')
-            cell.pack_start(value, False, False, 0)
-            self.temps[key] = value
-            if key in ('cpu', 'gpu'):
-                load = _label('', 'info')
-                cell.pack_start(load, False, False, 0)
-                self.loads[key] = load
-            cell.set_valign(Gtk.Align.CENTER)
-            surface.pack_start(cell, False, False, 0)
-        self.memory = {}
-        for key, title in (('ram', 'RAM'), ('vram', 'VRAM')):
-            cell = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-            line = Gtk.Box(spacing=6)
-            line.pack_start(_label(title, 'row-name'), False, False, 0)
-            value = _label('—', 'row-value')
-            line.pack_start(value, False, False, 0)
-            cell.pack_start(line, False, False, 0)
-            bar = self.owner_meter()
-            bar.set_size_request(-1 if self.vertical else 70, -1)
-            cell.pack_start(bar, False, False, 0)
-            cell.set_valign(Gtk.Align.CENTER)
-            surface.pack_start(cell, False, False, 0)
-            self.memory[key] = (value, bar)
-        self.pump = _label('Pumpe —', 'info')
-        self.ping = _label('Ping —', 'info')
-        self.transfer = _label('↓ —  ↑ —', 'info')
-        for item in (self.pump, self.ping, self.transfer):
-            item.set_valign(Gtk.Align.CENTER)
-            if self.vertical:
-                # Schmale Seitenleiste: umbrechen statt abschneiden.
-                item.set_line_wrap(True)
-                item.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
-                item.set_max_width_chars(14)
+        self.items = bar_items(self.owner.settings)
+        self.temps, self.loads, self.memory, self.texts = {}, {}, {}, {}
+        self.profile_button = self.audio_button = self.mic_button = None
+        titles = dict(METRICS)
+        for key in self.items:
+            if key in titles:
+                cell = Gtk.Box(spacing=6)
+                cell.pack_start(_label(titles[key], 'row-name'), False, False, 0)
+                value = _label('—', 'bar-value')
+                cell.pack_start(value, False, False, 0)
+                self.temps[key] = value
+                if key in ('cpu', 'gpu'):
+                    load = _label('', 'info')
+                    cell.pack_start(load, False, False, 0)
+                    self.loads[key] = load
+                cell.set_valign(Gtk.Align.CENTER)
+                surface.pack_start(cell, False, False, 0)
+            elif key in ('ram', 'vram'):
+                cell = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+                line = Gtk.Box(spacing=6)
+                line.pack_start(_label(key.upper(), 'row-name'), False, False, 0)
+                value = _label('—', 'row-value')
+                line.pack_start(value, False, False, 0)
+                cell.pack_start(line, False, False, 0)
+                bar = self.owner_meter()
+                bar.set_size_request(-1 if self.vertical else 70, -1)
+                cell.pack_start(bar, False, False, 0)
+                cell.set_valign(Gtk.Align.CENTER)
+                surface.pack_start(cell, False, False, 0)
+                self.memory[key] = (value, bar)
+            elif key == 'profile':
+                self.profile_button = Gtk.Button(label='Profil')
+                self.profile_button.get_style_context().add_class('profile-pill')
+                self.profile_button.set_valign(Gtk.Align.CENTER)
+                self.profile_button.set_tooltip_text('Lüfterprofil wechseln: Leise → Normal → Spiel')
+                self.profile_button.connect('clicked', lambda *_: self.owner.cycle_profile())
+                surface.pack_start(self.profile_button, False, False, 0)
+            elif key == 'audio':
+                cell = Gtk.Box(spacing=4)
+                cell.set_valign(Gtk.Align.CENTER)
+                self.audio_button = Gtk.Button(label='🔊 —')
+                self.audio_button.get_style_context().add_class('mini-close')
+                self.audio_button.set_tooltip_text('Klicken: Ton an/aus · Mausrad: Lautstärke')
+                self.audio_button.add_events(Gdk.EventMask.SCROLL_MASK | Gdk.EventMask.SMOOTH_SCROLL_MASK)
+                self.audio_button.connect('clicked', lambda *_: self.owner.audio_action('mute'))
+                self.audio_button.connect('scroll-event', self.audio_scroll)
+                self.mic_button = Gtk.Button(label='🎤')
+                self.mic_button.get_style_context().add_class('mini-close')
+                self.mic_button.set_tooltip_text('Mikrofon stumm schalten / einschalten')
+                self.mic_button.connect('clicked', lambda *_: self.owner.audio_action('mic'))
+                cell.pack_start(self.audio_button, False, False, 0)
+                cell.pack_start(self.mic_button, False, False, 0)
+                surface.pack_start(cell, False, False, 0)
             else:
-                item.set_ellipsize(Pango.EllipsizeMode.END)
-            surface.pack_start(item, False, False, 0)
-        if not self.vertical:
-            # Mindestbreite, damit Werte nicht zu „…“ zusammenfallen.
-            for item, chars in ((self.pump, 18), (self.ping, 14), (self.transfer, 17)):
-                item.set_width_chars(chars)
+                chars = {'top': 22, 'pump': 18, 'ping': 14, 'transfer': 17, 'disk': 18, 'power': 9, 'clock': 11}[key]
+                self.texts[key] = self._info('—', chars)
+                surface.pack_start(self.texts[key], False, False, 0)
         tail = Gtk.Box(spacing=6)
         tail.set_valign(Gtk.Align.CENTER if not self.vertical else Gtk.Align.END)
         self.pill = _label('LIVE', 'pill')
@@ -184,6 +219,16 @@ class BarWindow(Gtk.Window):
         tail.pack_start(gear, False, False, 0)
         surface.pack_end(tail, False, False, 0)
         events.show_all()
+
+    def audio_scroll(self, _widget, event) -> bool:
+        direction = event.direction
+        if direction == Gdk.ScrollDirection.SMOOTH:
+            delta = -event.delta_y
+        else:
+            delta = 1 if direction == Gdk.ScrollDirection.UP else -1 if direction == Gdk.ScrollDirection.DOWN else 0
+        if delta:
+            self.owner.audio_action('volume', 5 if delta > 0 else -5)
+        return True
 
     def owner_meter(self) -> Gtk.LevelBar:
         from air_studio import meter
@@ -274,6 +319,7 @@ class BarWindow(Gtk.Window):
     def show_values(self, source) -> None:
         """Copy the current readings from AirWindow (no extra sensor reads)."""
         from air_studio import de, level, rate, set_level
+        import profiles
         latest = getattr(source, 'latest', {}) or {}
         for key, label in self.temps.items():
             value = latest.get(key)
@@ -289,10 +335,31 @@ class BarWindow(Gtk.Window):
             percent = metrics.get(key + '_percent')
             bar.set_value(0 if percent is None else max(0, min(100, percent)) / 100)
         separator = '\n' if self.vertical else ' · '
-        self.pump.set_text(source.mini_pump.get_text().replace(' · ', separator))
-        self.ping.set_text(source.mini_ping.get_text() + ('' if not source.mini_signal.get_text() else separator + source.mini_signal.get_text()))
         network = source.network_state or {}
-        self.transfer.set_text(f"↓ {rate(network.get('rx_bytes_sec'))}{separator if self.vertical else '  '}↑ {rate(network.get('tx_bytes_sec'))}")
+        extras = source.extras or {}
+        values = {
+            'top': source.top_text(),
+            'pump': source.mini_pump.get_text().replace(' · ', separator),
+            'ping': source.mini_ping.get_text() + ('' if not source.mini_signal.get_text() else separator + source.mini_signal.get_text()),
+            'transfer': f"↓ {rate(network.get('rx_bytes_sec'))}{separator if self.vertical else '  '}↑ {rate(network.get('tx_bytes_sec'))}",
+            'disk': f"SSD R {rate(metrics.get('disk_read_bytes_sec'))}{separator if self.vertical else '  '}W {rate(metrics.get('disk_write_bytes_sec'))}",
+            'power': 'GPU —' if extras.get('gpu_power_w') is None else f"GPU {extras['gpu_power_w']:.0f} W",
+            'clock': 'CPU —' if not metrics.get('cpu_clock_mhz') else f"CPU {de(metrics['cpu_clock_mhz'] / 1000)} GHz",
+        }
+        for key, label in self.texts.items():
+            label.set_text(values[key])
+        if self.profile_button is not None:
+            self.profile_button.set_label(profiles.title(source.profile).upper())
+            self.profile_button.set_sensitive(not source.backend_busy)
+        if self.audio_button is not None:
+            audio = source.audio_state()
+            volume = audio.get('volume_percent')
+            muted = audio.get('output_muted')
+            self.audio_button.set_label(('🔇 ' if muted else '🔊 ') + ('—' if volume is None else f'{volume:.0f} %'))
+            self.mic_button.set_label('🎤✕' if audio.get('mic_muted') else '🎤')
+            available = bool(audio.get('available'))
+            self.audio_button.set_sensitive(available)
+            self.mic_button.set_sensitive(available and audio.get('default_source') is not None)
         self.pill.set_text(source.mini_live.get_text())
         context = self.pill.get_style_context()
         for name in ('state-ok', 'state-warn', 'state-hot', 'state-missing'):

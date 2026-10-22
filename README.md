@@ -28,6 +28,11 @@ Die Abbildungen zeigen die echte Oberfläche mit Beispielwerten.
 - CPU-, GPU-, Hotspot- und NVMe-SSD-Temperaturen; Lüfter- und Pumpendrehzahlen im Studio.
 - Farbstufen und Alarm mit Hysterese; Warnungen kommen auch bei ausgeblendetem Widget.
 - „Im Vordergrund“ lässt sich abschalten, damit das Widget unter Vollbild-Spielen bleibt.
+- **Wer frisst?** – größter CPU-/RAM-Verbraucher in Widget und Leiste, Top 5 mit „Beenden“ im Studio.
+- **Lüfterprofile** Leise/Normal/Spiel per Klick und **automatischer Spielmodus** für Steam, Lutris und Heroic.
+- **Verlauf** mit Tages-Spitzenwerten, 24-Stunden-Diagramm und **Staubhinweis**.
+- Mainboard-Sensoren, CPU-/GPU-Takt, GPU-Watt und Laufwerks-Durchsatz im Studio.
+- Heller und dunkler Modus, Tastenkürzel **Super+Umschalt+A**.
 - Alternativ als **Leiste** oben, unten, links oder rechts am Bildschirmrand – praktisch für einen zweiten Monitor ohne Taskleiste.
 - Manuelle Lüfterleistung von 40 bis 100 % und drei editierbare Kennlinienpunkte.
 - CPU-, GPU- oder gemeinsamer Kühlbedarf als Kennlinienquelle; 100 % spätestens bei 85 °C.

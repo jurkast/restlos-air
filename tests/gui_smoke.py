@@ -99,7 +99,8 @@ class GuiSmokeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.directory = tempfile.TemporaryDirectory(prefix='restlos-gui-test-')
-        cls.environment = patch.dict(os.environ, {'XDG_CONFIG_HOME': cls.directory.name})
+        cls.environment = patch.dict(os.environ, {'XDG_CONFIG_HOME': cls.directory.name,
+                                                  'XDG_STATE_HOME': cls.directory.name + '/state'})
         cls.environment.start()
         import air_studio
         import control
@@ -253,7 +254,7 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertEqual(set(self.window.mini_temps), {'cpu', 'gpu', 'hotspot', 'ssd'})
         self.assertEqual(self.window.mini_temps['ssd'].get_text(), '38°')
         _, natural = self.window.stack.get_child_by_name('compact').get_preferred_width()
-        self.assertLessEqual(natural, self.air.COMPACT_WIDTH)
+        self.assertLessEqual(natural, self.air.COMPACT_WIDTH - 20)  # window border 10 px each side
         self.assertEqual(self.window.mini_live.get_text(), 'LIVE')
 
     def test_overheating_alerts_while_hidden_with_hysteresis(self):
@@ -387,7 +388,7 @@ class GuiSmokeTests(unittest.TestCase):
         monitor = self.air.Gdk.Display.get_default().get_monitor(self.window.monitor.get_active()).get_geometry()
         x, y, width, height = self.window.bar.geometry()
         self.assertEqual((x, width, y + height), (monitor.x, monitor.width, monitor.y + monitor.height))
-        for item in (self.window.bar.pump, self.window.bar.ping, self.window.bar.transfer):
+        for item in (self.window.bar.texts['pump'], self.window.bar.texts['ping'], self.window.bar.texts['transfer']):
             self.assertGreaterEqual(item.get_width_chars(), 14)
         self.window.view_combo.set_active_id('widget')
 
@@ -417,6 +418,86 @@ class GuiSmokeTests(unittest.TestCase):
         finally:
             reopened.view_combo.set_active_id('widget'); reopened.destroy()
         self.window.view_combo.set_active_id('widget')
+
+
+    def test_profile_cycle_applies_to_all_fans_and_manual_change_clears_it(self):
+        self.window.mini_profile.clicked()
+        self.wait_for(lambda: not self.window.backend_busy)
+        self.assertEqual(self.window.profile, 'quiet')
+        self.assertEqual(self.window.settings['fan_profile'], 'quiet')
+        applied = [action[1] for action in self.window.controller.actions if action[0] == 'curve']
+        self.assertEqual(applied, ['nct6798:1', 'nct6798:2', 'nct6798:3'])
+        self.assertEqual(self.window.mini_profile.get_label(), 'LEISE')
+        self.window.profile_panel.buttons['game'].set_active(True)
+        self.wait_for(lambda: not self.window.backend_busy)
+        self.assertEqual(self.window.profile, 'game')
+        self.window.open_studio.clicked()
+        self.wait_for(lambda: not self.window.backend_busy)
+        self.window.apply_control()
+        self.wait_for(lambda: not self.window.backend_busy)
+        self.assertIsNone(self.window.profile, self.window.control_feedback.get_text())
+        self.assertEqual(self.window.mini_profile.get_label(), 'EIGENE')
+
+    def test_game_detection_switches_profile_automatically(self):
+        from processes import ProgramUsage
+        self.window.game_mode.enabled = True
+        self.window.profile = 'normal'
+        game = [ProgramUsage('Hades2.exe', 40.0, 2**31, 1, True)]
+        with patch.object(self.window.scanner, 'sample', return_value=game):
+            self.window.scanner.game = 'Hades II'
+            self.window.process_last = 0
+            self.window.background_tasks(time.monotonic(), False)
+        self.wait_for(lambda: not self.window.backend_busy)
+        self.assertEqual(self.window.profile, 'game')
+        self.assertEqual(self.window.game_mode.previous, 'normal')
+        self.assertIn('Hades2.exe 40 %', self.window.top_text())
+
+    def test_process_panel_lists_programs_and_hides_protected_end_buttons(self):
+        from processes import ProgramUsage
+        self.window.set_compact(False)
+        self.window.process_panel.refresh([ProgramUsage('chrome', 34.2, 3 * 2**30, 12, True),
+                                           ProgramUsage('gnome-shell', 5.0, 2**29, 1, False)])
+        name, cpu, memory, end = self.window.process_panel.rows[0]
+        self.assertEqual((name.get_text(), cpu.get_text(), memory.get_text()), ('chrome  ×12', '34 %', '3,0 GiB'))
+        self.assertTrue(end.get_visible())
+        self.assertFalse(self.window.process_panel.rows[1][3].get_visible())
+
+    def test_bar_items_can_be_chosen_and_reordered(self):
+        self.window.view_combo.set_active_id('bar'); self.window.edge_combo.set_active_id('bottom')
+        panel = self.window.bar_items_panel
+        panel.store(['ssd', 'cpu', 'disk', 'power', 'clock'])
+        bar = self.window.bar
+        self.assertEqual(bar.items, ['ssd', 'cpu', 'disk', 'power', 'clock'])
+        self.assertEqual(set(bar.temps), {'ssd', 'cpu'})
+        self.assertNotIn('ram', bar.memory)
+        panel.move(None, 'cpu', -1)
+        self.assertEqual(self.window.settings['bar_items'][:2], ['cpu', 'ssd'])
+        self.window.metrics_state = {'disk_read_bytes_sec': 2 * 1024**2, 'disk_write_bytes_sec': 0, 'cpu_clock_mhz': 4650}
+        self.window.extras = {'gpu_power_w': 212.4}
+        bar.show_values(self.window)
+        self.assertEqual(bar.texts['power'].get_text(), 'GPU 212 W')
+        self.assertEqual(bar.texts['clock'].get_text(), 'CPU 4,7 GHz')
+        self.assertIn('R 2,0 MiB/s', bar.texts['disk'].get_text())
+        panel.reset()
+        self.assertIn('audio', bar.items)
+        self.window.view_combo.set_active_id('widget')
+
+    def test_history_panel_and_light_theme_css(self):
+        import theme
+        self.window.history_store.add({'cpu': 77, 'gpu': 60}, 50, 'chrome', 'Hades II')
+        self.window.history_panel.refresh(self.window.history_store)
+        self.assertIn('CPU max. 77 °C', self.window.history_panel.peaks.get_text())
+        self.assertIn('Hades II', self.window.history_panel.peaks.get_text())
+        light = theme.light_css(self.air.CSS)
+        self.assertNotIn(b'#20323e', light)
+        self.assertIn(b'#ffffff', light)
+        self.air.Gtk.CssProvider().load_from_data(light)
+
+    def test_toggle_hides_and_shows_the_current_view(self):
+        self.window.hide_views()
+        self.assertFalse(self.window.get_visible())
+        self.window.show_view(True)
+        self.assertTrue(self.window.get_visible())
 
 
 if __name__ == '__main__':
