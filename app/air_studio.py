@@ -454,15 +454,16 @@ class AirWindow(Gtk.ApplicationWindow):
         mini=box(spacing=8);mini.set_name('mini-surface')
         for side in ('top','bottom','start','end'):getattr(mini,'set_margin_'+side)(0)
         self.stack.add_named(mini,'compact')
-        header=box(False,4)
-        header.set_margin_top(10);header.set_margin_start(12);header.set_margin_end(4)
+        header=box(False,6)
+        header.set_margin_top(10);header.set_margin_start(14);header.set_margin_end(6)
         drag=Gtk.EventBox();drag.add(label('RESTLOS AIR','eyebrow'))
         drag.connect('button-press-event',self.drag)
         drag.set_tooltip_text('Ziehen zum Verschieben · Strg+M wechselt die Ansicht')
         add(header,drag,True)
         self.mini_profile=Gtk.Button(label=profiles.title(self.profile).upper());self.mini_profile.get_style_context().add_class('profile-pill')
         self.mini_profile.set_valign(Gtk.Align.CENTER);self.mini_profile.set_tooltip_text('Lüfterprofil wechseln: Leise → Normal → Spiel')
-        self.mini_profile.connect('clicked',lambda *_:self.cycle_profile());add(header,self.mini_profile)
+        self.mini_profile.connect('clicked',lambda *_:self.cycle_profile())
+        self.mini_profile.set_halign(Gtk.Align.END)
         self.mini_live=add(header,label('LIVE','pill'));self.mini_live.set_valign(Gtk.Align.CENTER)
         self.mini_live.get_style_context().add_class('state-ok')
         self.mini_update=Gtk.Button(label='UPDATE');self.mini_update.get_style_context().add_class('update-pill')
@@ -518,7 +519,7 @@ class AirWindow(Gtk.ApplicationWindow):
         info.attach(self.mini_transfer,0,1,1,1);info.attach(self.mini_signal,1,1,1,1)
         self.mini_top=label('Top · —','info');self.mini_top.set_ellipsize(Pango.EllipsizeMode.END)
         self.mini_top.set_tooltip_text('Programm mit der höchsten CPU-Last · Details im Studio')
-        info.attach(self.mini_top,0,2,2,1)
+        info.attach(self.mini_top,0,2,1,1);info.attach(self.mini_profile,1,2,1,1)
         add(mini,self.open_studio)
 
     def build_update_panel(self,content):
@@ -846,7 +847,7 @@ class AirWindow(Gtk.ApplicationWindow):
             try:self.extras=read_extras()
             except OSError:self.extras={}
             if not self.compact:self.board_panel.refresh(self.extras,self.metrics_state)
-        self.mini_top.set_text(self.top_text())
+        self.mini_top.set_text(self.top_text(short=True));self.mini_top.set_tooltip_text(self.top_text()+' · Details im Studio')
         if self.compact:
             for spark_owner in self.mini_temps.values():spark_owner.get_parent().queue_draw()
         self.push_bar()
@@ -885,9 +886,10 @@ class AirWindow(Gtk.ApplicationWindow):
         if not hidden and not self.compact and now-self.history_last>=30:
             self.history_last=now;self.history_panel.refresh(self.history_store)
 
-    def top_text(self):
+    def top_text(self,short=False):
         if not self.top:return 'Top · —'
         item=self.top[0]
+        if short:return f'Top · {item.name} {item.cpu_percent:.0f} %'
         return f'Top · {item.name} {item.cpu_percent:.0f} % · {panels.memory_text(item.memory_bytes)}'
 
     def audio_state(self):
