@@ -614,10 +614,16 @@ class AirWindow(Gtk.ApplicationWindow):
         if self.bar_visible():self.bar.show_values(self)
 
     def refresh_bar_hint(self):
-        blocked=self.bar_visible() and self.bar.reserve and not self.bar.reserve_possible()
-        self.bar_hint.set_text('An dieser Kante schließt dein anderer Monitor an. Dort kann kein Platz freigehalten werden – '
-                               'die Leiste liegt über den Fenstern. Für freien Platz die äußere Kante wählen.' if blocked else '')
-        self.bar_hint.set_visible(blocked)
+        visible=self.bar_visible()
+        blocked=visible and self.bar.reserve and not self.bar.reserve_possible()
+        texts=[]
+        if blocked:
+            texts.append('An dieser Kante schließt dein anderer Monitor an. Dort kann kein Platz freigehalten werden – '
+                         'die Leiste liegt über den Fenstern. Für freien Platz die äußere Kante wählen.')
+        if visible and self.bar.on_primary():
+            texts.append('Auf dem Hauptbildschirm kann die Leiste die Zorin-Taskleiste überdecken; dafür den zweiten Monitor wählen.')
+        self.bar_hint.set_text('\n'.join(texts))
+        self.bar_hint.set_visible(bool(texts))
 
     def hide_views(self):
         self.hide()

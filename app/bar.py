@@ -158,6 +158,10 @@ class BarWindow(Gtk.Window):
             else:
                 item.set_ellipsize(Pango.EllipsizeMode.END)
             surface.pack_start(item, False, False, 0)
+        if not self.vertical:
+            # Mindestbreite, damit Werte nicht zu „…“ zusammenfallen.
+            for item, chars in ((self.pump, 18), (self.ping, 14), (self.transfer, 17)):
+                item.set_width_chars(chars)
         tail = Gtk.Box(spacing=6)
         tail.set_valign(Gtk.Align.CENTER if not self.vertical else Gtk.Align.END)
         self.pill = _label('LIVE', 'pill')
@@ -200,7 +204,15 @@ class BarWindow(Gtk.Window):
         index = self.owner.monitor.get_active()
         if not 0 <= index < display.get_n_monitors():
             index = 0
-        return display.get_monitor(index).get_workarea()
+        # Full monitor geometry, not the work area: on X11 GDK derives secondary work areas from
+        # _NET_WORKAREA (often only part of the monitor), and the bar's own strut shrinks the work
+        # area, which would push the bar further inwards on every re-placement.
+        return display.get_monitor(index).get_geometry()
+
+    def on_primary(self) -> bool:
+        display = Gdk.Display.get_default()
+        index = self.owner.monitor.get_active()
+        return 0 <= index < display.get_n_monitors() and display.get_monitor(index).is_primary()
 
     def geometry(self) -> tuple[int, int, int, int]:
         area = self.area()

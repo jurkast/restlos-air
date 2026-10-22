@@ -382,5 +382,15 @@ class GuiSmokeTests(unittest.TestCase):
         self.window.view_combo.set_active_id('widget')
 
 
+    def test_horizontal_bar_spans_the_whole_monitor_not_the_workarea(self):
+        self.window.view_combo.set_active_id('bar'); self.window.edge_combo.set_active_id('bottom')
+        monitor = self.air.Gdk.Display.get_default().get_monitor(self.window.monitor.get_active()).get_geometry()
+        x, y, width, height = self.window.bar.geometry()
+        self.assertEqual((x, width, y + height), (monitor.x, monitor.width, monitor.y + monitor.height))
+        for item in (self.window.bar.pump, self.window.bar.ping, self.window.bar.transfer):
+            self.assertGreaterEqual(item.get_width_chars(), 14)
+        self.window.view_combo.set_active_id('widget')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
