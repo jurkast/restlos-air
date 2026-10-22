@@ -1,5 +1,19 @@
 # Änderungen
 
+## 1.2.0 – 2026-10-22
+
+- Widget neu gestaltet: 300 statt 390 px breit, Design wie Restlos Bewerbung und Uninstaller.
+- Vier Temperaturkacheln (CPU, GPU, Hotspot, SSD) mit Farbstufen, Lastbalken für CPU, GPU, RAM und VRAM.
+- Statusplakette LIVE / WARM / HEISS / DATEN FEHLEN; Benachrichtigung nennt die Werte und wird bei Entwarnung zurückgezogen.
+- NVMe-SSD-Temperatur; bei mehreren SSDs zählt die heißeste.
+- „Im Vordergrund“ wird gespeichert und gilt für Widget, Studio und Audio.
+- Fehler: Überhitzung wurde bei ausgeblendetem Widget nicht gemeldet.
+- Fehler: Alarm flatterte um 85 °C; jetzt 5 °C Hysterese.
+- Fehler: Bei APU plus Grafikkarte konnte die falsche GPU gelesen werden; die dedizierte Karte hat Vorrang.
+- Fehler: Fehlermeldungen verwiesen auf „Zurück zur Automatik“, die Schaltfläche heißt „Vorherige Regelung“.
+- Fehler: Platzhaltertext beim Pumpenkanal und fester Grafikkartenname ersetzt.
+- Zahlen mit deutschem Dezimalkomma; Sensorsuche nur noch alle 30 Sekunden statt jede Sekunde.
+
 ## 1.1.1 – 2026-10-13
 
 - WLAN-Prozentwert eindeutig als „WLAN-Signal“ beschriftet.

@@ -294,7 +294,7 @@ class Controller:
             if entry and entry['device_uid'] != uid:
                 raise BackendError('Die Mainboard-Gerätekennung hat sich geändert. Vorherige Sicherung zuerst prüfen.')
             if entry and entry.get('pending_target'):
-                raise BackendError('Eine frühere Änderung ist unbestätigt. Zuerst „Zurück zur Automatik“ verwenden.')
+                raise BackendError('Eine frühere Änderung ist unbestätigt. Zuerst „Vorherige Regelung“ verwenden.')
             if not entry:
                 entry = {'device_uid': uid, 'channel': channel, 'baseline': previous,
                          'owned_profiles': [], 'last': None}
@@ -329,7 +329,7 @@ class Controller:
                     self._save()
                     self._cleanup(entry)
                 except BackendError:
-                    raise BackendError(str(exc) + ' Der Zustand ist unbestätigt; „Zurück zur Automatik“ stellt die Sicherung wieder her.') from None
+                    raise BackendError(str(exc) + ' Der Zustand ist unbestätigt; „Vorherige Regelung“ stellt die Sicherung wieder her.') from None
                 raise exc
             entry['owned_profiles'].extend(p['uid'] for p in profiles)
             pending_state = deepcopy(self.state)
@@ -348,7 +348,7 @@ class Controller:
                     self._clear_pending(entry)
                     self._save()
                 except BackendError:
-                    raise BackendError('Die Lüfteränderung konnte nicht dauerhaft bestätigt werden. „Zurück zur Automatik“ stellt die gespeicherte Einstellung wieder her.') from None
+                    raise BackendError('Die Lüfteränderung konnte nicht dauerhaft bestätigt werden. „Vorherige Regelung“ stellt die gespeicherte Einstellung wieder her.') from None
                 self._cleanup(entry)
                 raise BackendError('Die Sicherung konnte nicht abgeschlossen werden. Die vorherige Lüftereinstellung wurde wiederhergestellt.') from None
             self._cleanup(entry)

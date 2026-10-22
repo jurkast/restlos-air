@@ -92,7 +92,7 @@ def fake_sensor_data(include_fans=True):
                                          'channel': channel, 'chip': 'nct6798'}
         fans['amdgpu:1'] = {'rpm': 0, 'pwm': 0, 'mode': None, 'source': None,
                             'curve': [], 'channel': '1', 'chip': 'amdgpu'}
-    return {'cpu': 41., 'gpu': 39., 'hotspot': 44., 'mainboard': True, 'fans': fans}
+    return {'cpu': 41., 'gpu': 39., 'hotspot': 44., 'ssd': 38., 'mainboard': True, 'fans': fans}
 
 
 class GuiSmokeTests(unittest.TestCase):
@@ -107,6 +107,9 @@ class GuiSmokeTests(unittest.TestCase):
         import network
         from gi.repository import Gtk, Gio, GLib
         cls.air, cls.Gtk, cls.Gio, cls.GLib = air_studio, Gtk, Gio, GLib
+        cls.css = Gtk.CssProvider(); cls.css.load_from_data(air_studio.CSS)
+        Gtk.StyleContext.add_provider_for_screen(air_studio.Gdk.Screen.get_default(), cls.css,
+                                                 Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         cls.module_patches = [
             patch.object(air_studio, 'MetricsSampler', return_value=type('FakeMetrics', (), {'sample': lambda self: {
                 'cpu_percent': 12, 'gpu_percent': 37, 'ram_used_bytes': 8*2**30,
@@ -229,18 +232,58 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertFalse(self.window.backend_done({}, None, None))
 
     def test_load_memory_network_and_missing_values(self):
-        self.assertEqual(self.window.mini_load.get_text(), 'CPU 12 %   ·   GPU 37 %')
-        self.assertIn('RAM 8.0/32.0 GiB', self.window.mini_memory.get_text())
+        self.assertEqual(self.window.mini_values['cpu'].get_text(), '12 %')
+        self.assertEqual(self.window.mini_values['gpu'].get_text(), '37 %')
+        self.assertEqual(self.window.mini_values['ram'].get_text(), '8,0/32 GiB')
+        self.assertAlmostEqual(self.window.mini_bars['ram'].get_value(), .25)
         self.window.update_network({'internet_ms': 20, 'gateway_ms': 2, 'internet_status': 'ok',
             'signal_percent': 65, 'connection': 'wlan', 'rx_bytes_sec': 2*1024**2, 'tx_bytes_sec': 1024})
-        self.assertIn('WLAN-Signal 65 %', self.window.mini_ping.get_text())
-        self.assertEqual(self.window.mini_transfer.get_text(), '↓ 2.0 MiB/s   ·   ↑ 1 KiB/s')
+        self.assertEqual(self.window.mini_ping.get_text(), 'Ping · 20 ms')
+        self.assertEqual(self.window.mini_signal.get_text(), 'WLAN-Signal 65 %')
+        self.assertEqual(self.window.mini_transfer.get_text(), '↓ 2,0 MiB/s   ↑ 1 KiB/s')
         self.window.metrics_state={};self.window.update_metrics()
-        self.assertIn('CPU — %', self.window.mini_load.get_text())
+        self.assertEqual(self.window.mini_values['cpu'].get_text(), '— %')
+        self.assertEqual(self.window.mini_bars['cpu'].get_value(), 0)
         self.window.update_network({'internet_status':'disconnected'})
         self.assertEqual(self.window.mini_ping.get_text(), 'Ping · offline')
-        self.assertEqual(self.window.mini_transfer.get_text(), '↓ —   ·   ↑ —')
+        self.assertEqual(self.window.mini_transfer.get_text(), '↓ —   ↑ —')
 
+    def test_compact_widget_is_narrow_and_shows_four_temperatures(self):
+        self.window.update()
+        self.assertEqual(set(self.window.mini_temps), {'cpu', 'gpu', 'hotspot', 'ssd'})
+        self.assertEqual(self.window.mini_temps['ssd'].get_text(), '38°')
+        _, natural = self.window.stack.get_child_by_name('compact').get_preferred_width()
+        self.assertLessEqual(natural, self.air.COMPACT_WIDTH)
+        self.assertEqual(self.window.mini_live.get_text(), 'LIVE')
+
+    def test_overheating_alerts_while_hidden_with_hysteresis(self):
+        sent = []
+        self.window.get_application = lambda: type('App', (), {
+            'send_notification': lambda _, key, note: sent.append(key),
+            'withdraw_notification': lambda _, key: sent.append('withdraw')})()
+        hot = fake_sensor_data(False); hot['cpu'] = 91.
+        self.window.hide()
+        self.snapshot_patch.stop()
+        try:
+            for cpu in (91., 83., 82., 79.):
+                data = dict(hot, cpu=cpu)
+                with patch.object(self.air, 'snapshot', return_value=data):
+                    self.window.update()
+                if cpu == 91.:
+                    self.assertEqual(sent, ['temperature'])
+                    self.assertEqual(self.window.mini_live.get_text(), 'HEISS')
+                if cpu in (83., 82.):
+                    self.assertEqual(sent, ['temperature'], 'no flapping inside the hysteresis band')
+            self.assertEqual(sent, ['temperature', 'withdraw'])
+            self.assertEqual(self.window.mini_live.get_text(), 'WARM')
+        finally:
+            self.snapshot_patch.start()
+
+    def test_on_top_choice_is_saved(self):
+        self.window.pin.set_active(False)
+        self.assertFalse(self.window.settings['on_top'])
+        self.window.pin.set_active(True)
+        self.assertTrue(self.window.settings['on_top'])
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

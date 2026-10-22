@@ -97,9 +97,41 @@ class CachedSensorsTest(unittest.TestCase):
                 return original_read(path, *args, **kwargs)
             with patch.object(Path, 'read_text', tracked_read):
                 result = sensors.snapshot(root, include_fans=False)
-            self.assertEqual(result, {'cpu': 41., 'gpu': 39., 'hotspot': 44.,
+            self.assertEqual(result, {'cpu': 41., 'gpu': 39., 'hotspot': 44., 'ssd': None,
                                       'fans': {}, 'mainboard': True})
             self.assertEqual(set(read_paths), {'name', 'temp1_input', 'temp2_input'})
+
+
+    def make(self, root, devices):
+        for index, (name, attributes) in enumerate(devices):
+            device = root / f'hwmon{index}'
+            device.mkdir()
+            (device / 'name').write_text(name)
+            for key, value in attributes.items():
+                (device / key).write_text(value)
+
+    def test_prefers_discrete_gpu_and_reports_hottest_ssd(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make(root, [('amdgpu', {'temp1_input': '52000'}),
+                             ('amdgpu', {'temp1_input': '61000', 'temp2_input': '75000', 'fan1_input': '900'}),
+                             ('nvme', {'temp1_input': '41000'}), ('nvme', {'temp1_input': '57000'}),
+                             ('zenpower', {'temp1_input': '48000'})])
+            result = sensors.snapshot(root, include_fans=False)
+            self.assertEqual((result['gpu'], result['hotspot'], result['ssd'], result['cpu']), (61., 75., 57., 48.))
+
+    def test_discovery_is_cached_and_refreshed_when_a_device_disappears(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make(root, [('k10temp', {'temp1_input': '40000'})])
+            first = sensors.discover(root, now=100)
+            (root / 'hwmon9').mkdir(); (root / 'hwmon9' / 'name').write_text('nvme')
+            self.assertIs(sensors.discover(root, now=110), first)
+            self.assertIn('nvme', sensors.discover(root, now=131))
+            for item in (root / 'hwmon0').iterdir():
+                item.unlink()
+            (root / 'hwmon0').rmdir()
+            self.assertNotIn('k10temp', sensors.discover(root, now=132))
 
 
 if __name__ == '__main__':

@@ -2,6 +2,9 @@
 from datetime import datetime, timezone
 import math
 from pathlib import Path
+import time
+
+CPU_SENSORS = (('k10temp', 'temp1_input'), ('zenpower', 'temp1_input'), ('coretemp', 'temp1_input'))
 
 
 def number(path):
@@ -11,13 +14,42 @@ def number(path):
         return None
 
 
-def discover(root=Path('/sys/class/hwmon')):
-    found = {}
+_CACHE = {}
+_CACHE_SECONDS = 30
+
+
+def _score(path, name):
+    """Prefer the discrete GPU when an APU exposes a second amdgpu sensor."""
+    if name == 'amdgpu':
+        return (path.joinpath('fan1_input').exists(), path.joinpath('temp2_input').exists())
+    return (True,)
+
+
+def discover(root=Path('/sys/class/hwmon'), now=None):
+    """Map sensor names to hwmon paths; re-read names only every 30 seconds.
+
+    hwmonN numbers can change after a reboot, so nothing is persisted. Duplicate
+    names keep the most capable device (dGPU instead of APU) and all NVMe drives
+    are kept separately under ``nvme*``.
+    """
+    root = Path(root)
+    now = time.monotonic() if now is None else now
+    cached = _CACHE.get(root)
+    if cached and now - cached[0] < _CACHE_SECONDS and all(p.exists() for p in cached[1].values()):
+        return cached[1]
+    found, drives = {}, []
     for path in sorted(root.glob('hwmon*')):
         try:
-            found[path.joinpath('name').read_text().strip()] = path
+            name = path.joinpath('name').read_text().strip()
         except OSError:
             continue
+        if name == 'nvme':
+            drives.append(path)
+        elif name not in found or _score(path, name) > _score(found[name], name):
+            found[name] = path
+    for index, path in enumerate(drives):
+        found['nvme' if index == 0 else f'nvme{index}'] = path
+    _CACHE[root] = (now, found)
     return found
 
 
@@ -27,9 +59,14 @@ def snapshot(root=Path('/sys/class/hwmon'), include_curves=True, include_fans=Tr
         p = devices.get(device)
         value = number(p / field) if p else None
         return value / 1000 if value is not None else None
-    result = {'cpu': temperature('k10temp', 'temp1_input'),
+    cpu = next((value for device, field in CPU_SENSORS
+                if device in devices and (value := temperature(device, field)) is not None), None)
+    drives = [value for name in devices if name.startswith('nvme')
+              if (value := temperature(name, 'temp1_input')) is not None]
+    result = {'cpu': cpu,
               'gpu': temperature('amdgpu', 'temp1_input'),
               'hotspot': temperature('amdgpu', 'temp2_input'),
+              'ssd': max(drives) if drives else None,
               'fans': {}, 'mainboard': 'nct6798' in devices}
     if not include_fans:
         return result
