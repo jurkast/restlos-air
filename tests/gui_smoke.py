@@ -388,7 +388,7 @@ class GuiSmokeTests(unittest.TestCase):
         monitor = self.air.Gdk.Display.get_default().get_monitor(self.window.monitor.get_active()).get_geometry()
         x, y, width, height = self.window.bar.geometry()
         self.assertEqual((x, width, y + height), (monitor.x, monitor.width, monitor.y + monitor.height))
-        for item in (self.window.bar.texts['pump'], self.window.bar.texts['ping'], self.window.bar.texts['transfer']):
+        for item in self.window.bar.texts.values():
             self.assertGreaterEqual(item.get_width_chars(), 5)
         self.window.view_combo.set_active_id('widget')
 
@@ -463,16 +463,17 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertTrue(end.get_visible())
         self.assertFalse(self.window.process_panel.rows[1][3].get_visible())
 
-    def test_bar_items_can_be_chosen_and_reordered(self):
+    def test_bar_items_can_be_placed_top_bottom_or_off_and_reordered(self):
         self.window.view_combo.set_active_id('bar'); self.window.edge_combo.set_active_id('bottom')
         panel = self.window.bar_items_panel
-        panel.store(['ssd', 'cpu', 'disk', 'power', 'clock'])
+        panel.store(['ssd', 'cpu'], ['disk', 'power', 'clock'])
         bar = self.window.bar
-        self.assertEqual(bar.items, ['ssd', 'cpu', 'disk', 'power', 'clock'])
+        self.assertEqual((bar.items, bar.extra), (['ssd', 'cpu'], ['disk', 'power', 'clock']))
         self.assertEqual(set(bar.temps), {'ssd', 'cpu'})
         self.assertNotIn('ram', bar.memory)
         panel.move(None, 'cpu', -1)
-        self.assertEqual(self.window.settings['bar_items'][:2], ['cpu', 'ssd'])
+        self.assertEqual(self.window.settings['bar_items'], ['cpu', 'ssd'])
+        self.window.settings['bar_expanded'] = True; bar.rebuild()
         self.window.metrics_state = {'disk_read_bytes_sec': 2 * 1024**2, 'disk_write_bytes_sec': 0, 'cpu_clock_mhz': 4650}
         self.window.extras = {'gpu_power_w': 212.4}
         bar.show_values(self.window)
@@ -481,6 +482,8 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertIn('R 2,0 MiB/s', bar.texts['disk'].get_text())
         panel.reset()
         self.assertIn('audio', bar.items)
+        self.assertIn('pump', bar.extra)
+        self.window.settings.pop('bar_expanded', None)
         self.window.view_combo.set_active_id('widget')
 
     def test_history_panel_and_light_theme_css(self):
@@ -561,28 +564,42 @@ class GuiSmokeTests(unittest.TestCase):
         bar.show_values(self.window)
         self.assertEqual(bar.texts['top'].get_text(), 'claude-desktop 1 %')
         self.assertEqual(bar.texts['ping'].get_text(), '21 ms · 65 %')
+        self.window.settings['bar_expanded'] = True; bar.rebuild(); bar.show_values(self.window)
         self.assertNotIn('Pumpe', bar.texts['pump'].get_text())
+        self.window.settings.pop('bar_expanded')
         self.window.view_combo.set_active_id('widget')
 
 
-    def test_all_items_by_default_and_bar_gets_denser_instead_of_overflowing(self):
+    def test_ping_and_audio_on_top_extra_row_collapses(self):
         import panels
-        self.assertEqual(set(panels.bar_items({})), {key for key, _ in panels.BAR_ITEMS})
-        self.assertEqual(panels.bar_items({'bar_items': panels.OLD_DEFAULT_BAR_ITEMS}), panels.DEFAULT_BAR_ITEMS)
-        self.assertEqual(panels.bar_items({'bar_items': ['cpu']}), ['cpu'])
+        main, extra = panels.bar_layout({})
+        self.assertIn('ping', main); self.assertIn('audio', main)
+        self.assertEqual(set(main + extra), {key for key, _ in panels.BAR_ITEMS})
+        for legacy in panels.LEGACY_DEFAULTS:
+            self.assertEqual(panels.bar_layout({'bar_items': legacy}), (panels.DEFAULT_BAR_ITEMS, panels.DEFAULT_BAR_EXTRA))
+        self.assertEqual(panels.bar_layout({'bar_items': ['cpu'], 'bar_extra': ['cpu', 'ssd']}), (['cpu'], ['ssd']))
         self.window.view_combo.set_active_id('bar'); self.window.edge_combo.set_active_id('bottom')
         bar = self.window.bar
-        monitor = bar.area().width
         try:
-            with patch.object(bar, 'area', return_value=type('Area', (), {'x': 0, 'y': 0, 'width': 1100, 'height': 800})()):
+            self.assertFalse(bar.expanded)
+            self.assertIsNone(bar.extra_row)
+            collapsed = bar.geometry()[3]
+            self.assertEqual(collapsed, 34)
+            self.assertNotIn('pump', bar.texts)
+            bar.expand_button.clicked()
+            bar = self.window.bar
+            self.assertTrue(self.window.settings['bar_expanded'])
+            self.assertIsNotNone(bar.extra_row)
+            self.assertIn('pump', bar.texts)
+            self.assertGreater(bar.geometry()[3], collapsed)
+            bar.expand_button.clicked()
+            self.assertEqual(self.window.bar.geometry()[3], 34)
+            with patch.object(bar, 'area', return_value=type('Area', (), {'x': 0, 'y': 0, 'width': 1000, 'height': 800})()):
                 bar.rebuild(); bar.place()
                 self.assertGreater(bar.density, 0)
-                self.assertLessEqual(bar.get_child().get_preferred_width()[1], 1100)
-            bar.rebuild()
-            self.assertLessEqual(bar.get_child().get_preferred_width()[1], monitor)
         finally:
+            self.window.settings.pop('bar_expanded', None)
             self.window.view_combo.set_active_id('widget')
-
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

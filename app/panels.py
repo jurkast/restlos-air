@@ -5,7 +5,7 @@ import time
 
 import gi
 gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, Pango
+from gi.repository import GLib, Gtk, Pango
 
 import profiles
 
@@ -17,17 +17,30 @@ BAR_ITEMS = (
     ('power', 'GPU-Leistung in Watt'), ('clock', 'CPU-Takt'), ('audio', 'Lautstärke und Mikrofon'),
 )
 # Standard: alles. Die Leiste wird bei Platzmangel automatisch dichter (siehe bar.DENSITY).
-DEFAULT_BAR_ITEMS = ['cpu', 'gpu', 'hotspot', 'ssd', 'ram', 'vram', 'top', 'clock', 'power', 'disk',
-                     'profile', 'pump', 'ping', 'transfer', 'audio']
-OLD_DEFAULT_BAR_ITEMS = ['cpu', 'gpu', 'hotspot', 'ssd', 'ram', 'vram', 'top', 'profile', 'pump', 'ping', 'transfer', 'audio']
+# Obere Reihe: das Wichtigste inklusive Ping und Audio. Untere Reihe: einklappbar, für Zusatzwerte.
+DEFAULT_BAR_ITEMS = ['cpu', 'gpu', 'hotspot', 'ssd', 'ram', 'vram', 'top', 'profile', 'ping', 'audio']
+DEFAULT_BAR_EXTRA = ['pump', 'transfer', 'disk', 'power', 'clock']
+# Frühere Standardauswahlen werden auf die neue Aufteilung umgestellt.
+LEGACY_DEFAULTS = (
+    ['cpu', 'gpu', 'hotspot', 'ssd', 'ram', 'vram', 'top', 'profile', 'pump', 'ping', 'transfer', 'audio'],
+    ['cpu', 'gpu', 'hotspot', 'ssd', 'ram', 'vram', 'top', 'clock', 'power', 'disk', 'profile', 'pump', 'ping', 'transfer', 'audio'],
+)
+
+
+def bar_layout(settings: dict) -> tuple[list[str], list[str]]:
+    """(obere Reihe, untere Reihe) – jedes Element höchstens einmal, unbekannte verworfen."""
+    known = {key for key, _ in BAR_ITEMS}
+    main, extra = settings.get('bar_items'), settings.get('bar_extra')
+    if not isinstance(main, list) or (main in LEGACY_DEFAULTS and not isinstance(extra, list)):
+        return list(DEFAULT_BAR_ITEMS), list(DEFAULT_BAR_EXTRA)
+    main = [key for key in dict.fromkeys(main) if key in known]
+    extra = [key for key in dict.fromkeys(extra if isinstance(extra, list) else []) if key in known and key not in main]
+    return main, extra
 
 
 def bar_items(settings: dict) -> list[str]:
-    known = {key for key, _ in BAR_ITEMS}
-    chosen = settings.get('bar_items')
-    if not isinstance(chosen, list) or chosen == OLD_DEFAULT_BAR_ITEMS:
-        return list(DEFAULT_BAR_ITEMS)
-    return [key for key in dict.fromkeys(chosen) if key in known]
+    main, extra = bar_layout(settings)
+    return main + extra
 
 
 def _label(text: str = '', style: str = 'muted', xalign: float = 0) -> Gtk.Label:
@@ -278,10 +291,13 @@ class BoardPanel:
 
 
 class BarItemsPanel:
+    PLACES = (('main', 'Oben'), ('extra', 'Unten (einklappbar)'), ('off', 'Aus'))
+
     def __init__(self, window, content: Gtk.Box) -> None:
         self.window = window
         panel = _panel(content, 'Leiste zusammenstellen')
-        panel.pack_start(_label('Häkchen = anzeigen. Mit ↑ und ↓ die Reihenfolge ändern.'), False, False, 0)
+        panel.pack_start(_label('Oben = immer sichtbar. Unten = zweite Reihe, mit ▾ in der Leiste aus- und einklappbar. '
+                                'Mit ↑ und ↓ die Reihenfolge ändern.'), False, False, 0)
         self.list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         panel.pack_start(self.list, False, False, 0)
         reset = Gtk.Button(label='Standard wiederherstellen')
@@ -289,58 +305,68 @@ class BarItemsPanel:
         panel.pack_start(reset, False, False, 0)
         self.render()
 
-    def order(self) -> list[str]:
-        chosen = bar_items(self.window.settings)
-        return chosen + [key for key, _ in BAR_ITEMS if key not in chosen]
-
     def render(self) -> None:
         for child in self.list.get_children():
             child.destroy()
-        enabled = set(bar_items(self.window.settings))
+        main, extra = bar_layout(self.window.settings)
+        off = [key for key, _ in BAR_ITEMS if key not in main and key not in extra]
         titles = dict(BAR_ITEMS)
-        for index, key in enumerate(self.order()):
-            row = Gtk.Box(spacing=6)
-            check = Gtk.CheckButton(label=titles[key])
-            check.set_active(key in enabled)
-            check.connect('toggled', self.toggled, key)
-            row.pack_start(check, True, True, 0)
-            for symbol, step in (('↑', -1), ('↓', 1)):
-                button = Gtk.Button(label=symbol)
-                button.get_style_context().add_class('mini-close')
-                button.set_sensitive(key in enabled and 0 <= index + step < len(enabled))
-                button.connect('clicked', self.move, key, step)
-                row.pack_start(button, False, False, 0)
-            self.list.pack_start(row, False, False, 0)
+        for place, keys in (('main', main), ('extra', extra), ('off', off)):
+            for index, key in enumerate(keys):
+                row = Gtk.Box(spacing=6)
+                name = _label(titles[key], 'row-value' if place != 'off' else 'muted')
+                name.set_hexpand(True)
+                row.pack_start(name, True, True, 0)
+                combo = Gtk.ComboBoxText()
+                for value, title in self.PLACES:
+                    combo.append(value, title)
+                combo.set_active_id(place)
+                combo.connect('changed', self.placed, key)
+                row.pack_start(combo, False, False, 0)
+                for symbol, step in (('↑', -1), ('↓', 1)):
+                    button = Gtk.Button(label=symbol)
+                    button.get_style_context().add_class('mini-close')
+                    button.set_sensitive(place != 'off' and 0 <= index + step < len(keys))
+                    button.connect('clicked', self.move, key, step)
+                    row.pack_start(button, False, False, 0)
+                self.list.pack_start(row, False, False, 0)
         self.list.show_all()
 
-    def store(self, items: list[str]) -> None:
-        self.window.settings['bar_items'] = items
+    def store(self, main: list[str], extra: list[str]) -> None:
+        self.window.settings['bar_items'] = main
+        self.window.settings['bar_extra'] = extra
         self.window.save()
         if self.window.bar is not None:
             self.window.bar.rebuild()
             self.window.push_bar()
-        self.render()
+        GLib.idle_add(self.render_once)  # nicht innerhalb des eigenen Signal-Handlers neu aufbauen
 
-    def toggled(self, check: Gtk.CheckButton, key: str) -> None:
-        items = bar_items(self.window.settings)
-        if check.get_active() and key not in items:
-            items.append(key)
-        elif not check.get_active() and key in items:
-            items.remove(key)
-        self.store(items)
+    def render_once(self) -> bool:
+        self.render()
+        return False
+
+    def placed(self, combo: Gtk.ComboBoxText, key: str) -> None:
+        main, extra = bar_layout(self.window.settings)
+        main, extra = [k for k in main if k != key], [k for k in extra if k != key]
+        target = combo.get_active_id()
+        if target == 'main':
+            main.append(key)
+        elif target == 'extra':
+            extra.append(key)
+        self.store(main, extra)
 
     def move(self, _button, key: str, step: int) -> None:
-        items = bar_items(self.window.settings)
-        if key not in items:
-            return
-        index = items.index(key)
-        target = index + step
-        if 0 <= target < len(items):
-            items[index], items[target] = items[target], items[index]
-            self.store(items)
+        main, extra = bar_layout(self.window.settings)
+        for items in (main, extra):
+            if key in items:
+                index = items.index(key)
+                target = index + step
+                if 0 <= target < len(items):
+                    items[index], items[target] = items[target], items[index]
+        self.store(main, extra)
 
     def reset(self, *_args) -> None:
-        self.store(list(DEFAULT_BAR_ITEMS))
+        self.store(list(DEFAULT_BAR_ITEMS), list(DEFAULT_BAR_EXTRA))
 
 
 class AppearancePanel:
