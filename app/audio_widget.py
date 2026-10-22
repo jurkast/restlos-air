@@ -103,6 +103,7 @@ class AudioWindow(Gtk.ApplicationWindow):
         self.refresh_monitors()
         self.monitor=AudioMonitor(lambda data:GLib.idle_add(self.update_state,data))
         self.update_state({})
+        self.ready=True
         self.monitor.start()
 
     def show_widget(self):
@@ -226,7 +227,7 @@ class AudioWindow(Gtk.ApplicationWindow):
         error=data.get('error') or self.action_error
         if error:self.feedback.set_text(error);self.feedback.show()
         elif not self.busy:self.feedback.set_text('');self.feedback.hide()
-        if hasattr(self.owner,'push_bar'):self.owner.push_bar()
+        if getattr(self,'ready',False) and hasattr(self.owner,'push_bar'):self.owner.push_bar()
         return False
 
     def set_sensitivity(self):

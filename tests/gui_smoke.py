@@ -510,5 +510,39 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertIn('kaputt', log.read_text())
 
 
+    def test_audio_in_bar_starts_audio_once_without_recursion(self):
+        import types
+        import audio_widget
+        class QuietAudio:
+            def __init__(self, callback): self.callback = callback
+            def start(self): return self
+            def stop(self, *args): pass
+            def snapshot(self): return {}
+        app = self.app
+        app.audio_window, app.audio_pending, app.audio_creating, app.window = None, False, False, self.window
+        app.ensure_audio = types.MethodType(self.air.AirApp.ensure_audio, app)
+        created = []
+        original = audio_widget.AudioWindow.__init__
+        def counting(window, *args, **kwargs):
+            created.append(window)
+            original(window, *args, **kwargs)
+        self.window.settings['bar_items'] = ['cpu', 'audio']
+        try:
+            with patch.object(audio_widget, 'AudioMonitor', QuietAudio), \
+                 patch.object(audio_widget.AudioWindow, '__init__', counting):
+                self.window.view_combo.set_active_id('bar')
+                self.window.bar.rebuild()
+                for _ in range(3):
+                    self.window.push_bar(); self.drain()
+            self.assertEqual(len(created), 1)
+            self.assertIs(app.audio_window, created[0])
+            self.assertFalse(app.audio_pending)
+        finally:
+            if app.audio_window: app.audio_window.destroy()
+            for name in ('audio_window', 'audio_pending', 'audio_creating', 'window', 'ensure_audio'):
+                delattr(app, name)
+            self.window.settings.pop('bar_items', None)
+            self.window.view_combo.set_active_id('widget')
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

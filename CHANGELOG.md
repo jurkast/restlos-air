@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.6.2 – 2026-10-22
+
+- Fehler: Mit „Lautstärke und Mikrofon“ in der Leiste startete das Audio-Fenster sich beim Starten immer wieder selbst (Endlosschleife). Dadurch blieben Widget und Leiste ohne Werte. Das Audio wird jetzt genau einmal gestartet.
+
 ## 1.6.1 – 2026-10-22
 
 - Fehler: Löste eine Zusatzfunktion einmal eine Ausnahme aus, hielt GTK die sekündliche Messung an und Widget/Leiste zeigten keine Werte mehr. Die Messung läuft jetzt in jedem Fall weiter; Fehler landen in `~/.local/state/restlos-air/fehler.log`.
