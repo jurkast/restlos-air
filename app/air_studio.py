@@ -82,6 +82,12 @@ check:checked { background-color: #167c77; border-color: #167c77; color: #ffffff
 menu, .menu { background-color: #20323e; color: #e3edef; }
 button.update-pill { background-color: #167c77; border-color: #167c77; color: #ffffff; border-radius: 999px; padding: 0 8px; min-height: 16px; font-size: 9px; font-weight: 800; letter-spacing: 1px; }
 button.update-pill:hover { background-color: #1b8f89; }
+#bar-surface { background-color: rgba(21,35,46,0.96); }
+#bar-surface.bar-bottom { border-top: 1px solid #2b404b; }
+#bar-surface.bar-top { border-bottom: 1px solid #2b404b; }
+#bar-surface.bar-left { border-right: 1px solid #2b404b; }
+#bar-surface.bar-right { border-left: 1px solid #2b404b; }
+.bar-value { font-size: 14px; font-weight: 800; }
 '''
 
 
@@ -242,6 +248,8 @@ class AirWindow(Gtk.ApplicationWindow):
         self.alarm_state = None
         self.hot_keys = set()
         self.limits = load_limits(self.settings.get('limits'))
+        self.view_mode = 'bar' if self.settings.get('view_mode') == 'bar' else 'widget'
+        self.bar = None
         self.limit_tips = {}
         self.auth_window = None
         self.closed = False
@@ -484,11 +492,28 @@ class AirWindow(Gtk.ApplicationWindow):
         self.update_info.set_text(text)
         for button in (self.update_restart,self.mini_update):
             button.set_visible(status.restart_ready)
+        self.push_bar()
         self.mini_update.set_tooltip_text(f'Version {status.pending} bereit · klicken zum Neustarten und Aktualisieren' if status.restart_ready else '')
 
     def build_settings_panel(self,content):
         panel=box(spacing=8);panel.get_style_context().add_class('panel');add(content,panel)
         add(panel,label('Warnungen & Widget','section'))
+        view=Gtk.Grid(column_spacing=10,row_spacing=6);add(panel,view)
+        view.attach(label('Ansicht','row-name'),0,0,1,1)
+        self.view_combo=Gtk.ComboBoxText();self.view_combo.set_hexpand(True)
+        self.view_combo.append('widget','Widget · frei verschiebbar');self.view_combo.append('bar','Leiste · am Bildschirmrand')
+        self.view_combo.set_active_id(self.view_mode);view.attach(self.view_combo,1,0,1,1)
+        view.attach(label('Position','row-name'),0,1,1,1)
+        from bar import EDGES,EDGE_TITLES
+        self.edge_combo=Gtk.ComboBoxText()
+        for edge in EDGES:self.edge_combo.append(edge,EDGE_TITLES[edge])
+        self.edge_combo.set_active_id(self.settings.get('bar_edge','bottom') if self.settings.get('bar_edge') in EDGES else 'bottom')
+        view.attach(self.edge_combo,1,1,1,1)
+        self.reserve_check=Gtk.CheckButton(label='Platz freihalten (maximierte Fenster enden an der Leiste)')
+        self.reserve_check.set_active(self.settings.get('bar_reserve',True) is not False);view.attach(self.reserve_check,1,2,1,1)
+        for widget,signal_name in ((self.view_combo,'changed'),(self.edge_combo,'changed'),(self.reserve_check,'toggled')):
+            widget.connect(signal_name,self.view_settings_changed)
+        self.view_settings_changed()
         add(panel,label('Gelb ab „Warnung“, rot und Benachrichtigung ab „Alarm“. Entwarnung 5 °C darunter.','muted')).set_line_wrap(True)
         grid=Gtk.Grid(column_spacing=10,row_spacing=6);add(panel,grid)
         for column,title in enumerate(('','Warnung °C','Alarm °C')):grid.attach(label(title,'muted'),column,0,1,1)
@@ -505,6 +530,18 @@ class AirWindow(Gtk.ApplicationWindow):
         self.limits_feedback=add(actions,label('','muted'),True);self.limits_feedback.set_line_wrap(True)
         reset=Gtk.Button(label='Standardwerte');reset.connect('clicked',self.reset_limits);add(actions,reset)
         self.refresh_limit_tips()
+
+    def view_settings_changed(self,*_):
+        mode=self.view_combo.get_active_id() or 'widget'
+        bar=mode=='bar'
+        self.edge_combo.set_sensitive(bar);self.reserve_check.set_sensitive(bar)
+        changed=(mode!=self.view_mode or self.edge_combo.get_active_id()!=self.settings.get('bar_edge','bottom')
+                 or self.reserve_check.get_active()!=(self.settings.get('bar_reserve',True) is not False))
+        if not changed:return
+        self.view_mode=mode
+        self.settings.update(view_mode=mode,bar_edge=self.edge_combo.get_active_id(),bar_reserve=self.reserve_check.get_active())
+        self.save()
+        self.apply_view_mode()
 
     def refresh_limit_tips(self):
         names=dict(TEMP_TITLES)
@@ -548,13 +585,44 @@ class AirWindow(Gtk.ApplicationWindow):
 
     def cleanup(self,*_):
         self.closed = True
+        if self.bar:self.bar.destroy();self.bar=None
         GLib.source_remove(self.timer)
         self.network.stop()
         self.executor.shutdown(wait=False,cancel_futures=True)
 
     def show_view(self,compact=True):
+        if compact and self.view_mode=='bar':
+            self.set_compact(True);self.hide();self.show_bar();return
+        if self.view_mode!='bar' and self.bar:self.bar.hide()
         self.set_compact(compact)
         self.show_all();self.update();self.present()
+
+    def bar_visible(self):
+        return bool(self.bar and self.bar.get_visible())
+
+    def show_bar(self):
+        from bar import BarWindow
+        edge=self.settings.get('bar_edge','bottom');reserve=self.settings.get('bar_reserve',True) is not False
+        if self.bar is None:
+            self.bar=BarWindow(self,edge,reserve);self.bar.set_application(self.get_application())
+        else:self.bar.configure(edge,reserve)
+        self.bar.show_bar();self.update();self.push_bar()
+
+    def push_bar(self):
+        if self.bar_visible():self.bar.show_values(self)
+
+    def hide_views(self):
+        self.hide()
+        if self.bar:self.bar.hide()
+
+    def apply_view_mode(self):
+        # Studio stays open while switching; the chosen compact view appears behind it.
+        if self.view_mode=='bar':
+            if self.compact:self.hide()
+            self.show_bar()
+        else:
+            if self.bar:self.bar.hide()
+            if self.compact:self.show_view(True)
 
     def set_compact(self,compact):
         if self.compact == compact: return
@@ -566,7 +634,9 @@ class AirWindow(Gtk.ApplicationWindow):
         # Let GTK recompute its minimum size after changing stack children.
         GLib.idle_add(self.place)
         self.save()
-        if compact:self.open_studio.grab_focus()
+        if compact:
+            self.open_studio.grab_focus()
+            if self.view_mode=='bar':self.hide();self.show_bar()
         else:
             self.compact_button.grab_focus()
             self.curve_last=0
@@ -610,7 +680,9 @@ class AirWindow(Gtk.ApplicationWindow):
                     h=min(max(600,sh),target.height-24)
                 x=max(target.x,min(sx,target.x+target.width-w))
                 y=max(target.y,min(sy,target.y+target.height-max(h,COMPACT_HEIGHT)))
-        self.resize(w,h);self.move(x,y);return False
+        self.resize(w,h);self.move(x,y)
+        if self.bar_visible():self.bar.place();self.bar.apply_strut()
+        return False
 
     def select(self,b,key):
         if b.get_active():
@@ -645,7 +717,7 @@ class AirWindow(Gtk.ApplicationWindow):
 
     def update(self):
         now=time.monotonic()
-        hidden=not self.get_visible() and hasattr(self,'latest')
+        hidden=not self.get_visible() and not self.bar_visible() and hasattr(self,'latest')
         curves=not hidden and not self.compact and now-self.curve_last>=5
         self.latest=snapshot(include_curves=curves,include_fans=curves)
         if curves:
@@ -670,6 +742,7 @@ class AirWindow(Gtk.ApplicationWindow):
             self.metrics_last=now
             self.metrics_state=self.metrics_sampler.sample()
             self.update_metrics()
+        self.push_bar()
         if self.compact:return True
         self.history_chart.data=[[(t-now,cpu) for t,cpu,gpu in self.history],[(t-now,gpu) for t,cpu,gpu in self.history]];self.history_chart.queue_draw()
         fans=self.latest['fans'];visible=[k for k,v in fans.items() if self.show_zero.get_active() or v['rpm'] not in (0,) or k in (self.selected,'nct6798:6','amdgpu:1')]
@@ -889,6 +962,7 @@ class AirWindow(Gtk.ApplicationWindow):
         detail+='\n'+transfer
         self.network_detail.set_text(detail)
         self.mini_ping.set_tooltip_text(detail+' · Keine Antwort kann auch eine ICMP-Sperre bedeuten.')
+        self.push_bar()
         return False
 
     def check_alarms(self):
@@ -1052,10 +1126,10 @@ class AirApp(Gtk.Application):
             self.indicator.set_title('Restlos Air')
             self.indicator.set_status(Indicator.IndicatorStatus.ACTIVE)
             menu=Gtk.Menu()
-            for title,callback in [('Widget anzeigen',lambda *_:self.window.show_view(True)),
+            for title,callback in [('Widget / Leiste anzeigen',lambda *_:self.window.show_view(True)),
                                    ('Einstellungen öffnen',lambda *_:self.window.show_view(False)),
                                    ('Audio-Widget öffnen',self.show_audio),
-                                   ('Widget ausblenden',lambda *_:self.window.hide()),
+                                   ('Widget / Leiste ausblenden',lambda *_:self.window.hide_views()),
                                    ('Beenden',self.quit_app)]:
                 item=Gtk.MenuItem(label=title);item.connect('activate',callback);menu.append(item)
             menu.show_all();self.indicator.set_menu(menu)
