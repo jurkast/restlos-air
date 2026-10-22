@@ -348,7 +348,7 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertEqual(height, 34)
         self.window.edge_combo.set_active_id('right')
         self.assertTrue(self.window.bar.vertical)
-        self.assertEqual(self.window.bar.geometry()[2], 124)
+        self.assertGreaterEqual(self.window.bar.geometry()[2], 124)  # measured; wider system fonts are allowed
         self.window.show_view(False)
         self.assertTrue(self.window.get_visible())
         self.assertFalse(self.window.compact)
@@ -365,6 +365,31 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertEqual(bar.strut_values('top', 0, 0, 1920, 34, 3840, 1080)[2], 34)
         self.assertEqual(bar.strut_values('right', 3716, 0, 124, 1080, 3840, 1080)[1], 124)
         self.assertEqual(bar.strut_values('left', 1920, 0, 124, 1080, 3840, 1080)[0], 2044)
+
+
+    def test_no_strut_at_an_edge_shared_with_another_monitor(self):
+        self.window.view_combo.set_active_id('bar'); self.window.edge_combo.set_active_id('right')
+        bar = self.window.bar
+        # Second monitor on the left of the primary: its right edge touches the primary monitor.
+        with patch.object(bar, 'screen_bounds', return_value=(0, 0, 3840, 1080)), \
+             patch.object(bar, 'geometry', return_value=(1796, 0, 124, 1080)):
+            self.assertFalse(bar.reserve_possible())
+            self.window.refresh_bar_hint()
+            self.assertTrue(self.window.bar_hint.get_visible())
+        with patch.object(bar, 'screen_bounds', return_value=(0, 0, 3840, 1080)), \
+             patch.object(bar, 'geometry', return_value=(3716, 0, 124, 1080)):
+            self.assertTrue(bar.reserve_possible())
+        self.window.view_combo.set_active_id('widget')
+
+
+    def test_horizontal_bar_spans_the_whole_monitor_not_the_workarea(self):
+        self.window.view_combo.set_active_id('bar'); self.window.edge_combo.set_active_id('bottom')
+        monitor = self.air.Gdk.Display.get_default().get_monitor(self.window.monitor.get_active()).get_geometry()
+        x, y, width, height = self.window.bar.geometry()
+        self.assertEqual((x, width, y + height), (monitor.x, monitor.width, monitor.y + monitor.height))
+        for item in (self.window.bar.pump, self.window.bar.ping, self.window.bar.transfer):
+            self.assertGreaterEqual(item.get_width_chars(), 14)
+        self.window.view_combo.set_active_id('widget')
 
 
 if __name__ == '__main__':

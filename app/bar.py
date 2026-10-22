@@ -158,6 +158,10 @@ class BarWindow(Gtk.Window):
             else:
                 item.set_ellipsize(Pango.EllipsizeMode.END)
             surface.pack_start(item, False, False, 0)
+        if not self.vertical:
+            # Mindestbreite, damit Werte nicht zu „…“ zusammenfallen.
+            for item, chars in ((self.pump, 18), (self.ping, 14), (self.transfer, 17)):
+                item.set_width_chars(chars)
         tail = Gtk.Box(spacing=6)
         tail.set_valign(Gtk.Align.CENTER if not self.vertical else Gtk.Align.END)
         self.pill = _label('LIVE', 'pill')
@@ -200,12 +204,23 @@ class BarWindow(Gtk.Window):
         index = self.owner.monitor.get_active()
         if not 0 <= index < display.get_n_monitors():
             index = 0
-        return display.get_monitor(index).get_workarea()
+        # Full monitor geometry, not the work area: on X11 GDK derives secondary work areas from
+        # _NET_WORKAREA (often only part of the monitor), and the bar's own strut shrinks the work
+        # area, which would push the bar further inwards on every re-placement.
+        return display.get_monitor(index).get_geometry()
+
+    def on_primary(self) -> bool:
+        display = Gdk.Display.get_default()
+        index = self.owner.monitor.get_active()
+        return 0 <= index < display.get_n_monitors() and display.get_monitor(index).is_primary()
 
     def geometry(self) -> tuple[int, int, int, int]:
         area = self.area()
         if self.vertical:
-            width, height = SIDE_WIDTH, area.height
+            # Real fonts can be wider than the design width; measure, never overflow the screen edge.
+            child = self.get_child()
+            natural = child.get_preferred_width()[1] if child is not None else 0
+            width, height = min(max(SIDE_WIDTH, natural), area.width // 3), area.height
             x = area.x if self.edge == 'left' else area.x + area.width - width
             return x, area.y, width, height
         height = THICKNESS
@@ -218,18 +233,29 @@ class BarWindow(Gtk.Window):
         self.resize(width, height)
         self.move(x, y)
 
+    def screen_bounds(self) -> tuple[int, int, int, int]:
+        display = Gdk.Display.get_default()
+        frames = [display.get_monitor(i).get_geometry() for i in range(display.get_n_monitors())]
+        return (min(f.x for f in frames), min(f.y for f in frames),
+                max(f.x + f.width for f in frames), max(f.y + f.height for f in frames))
+
+    def reserve_possible(self) -> bool:
+        """Struts are measured from the outer X-screen edge. At an edge where another monitor
+        continues, a strut would reserve that whole monitor too – so only outer edges qualify."""
+        left, top, right, bottom = self.screen_bounds()
+        x, y, width, height = self.geometry()
+        return {'left': x <= left, 'right': x + width >= right,
+                'top': y <= top, 'bottom': y + height >= bottom}[self.edge]
+
     def apply_strut(self) -> bool:
         window = self.get_window()
         if window is None or not hasattr(window, 'get_xid'):
             return False
-        display = Gdk.Display.get_default()
-        # The X screen spans all monitors; struts are measured from its outer edges.
-        frames = [display.get_monitor(i).get_geometry() for i in range(display.get_n_monitors())]
-        screen_width = max(frame.x + frame.width for frame in frames)
-        screen_height = max(frame.y + frame.height for frame in frames)
+        _, _, screen_width, screen_height = self.screen_bounds()
         x, y, width, height = self.geometry()
         values = strut_values(self.edge, x, y, width, height, screen_width, screen_height)
-        return set_strut(window.get_xid(), values if self.reserve else [0] * 12)
+        active = self.reserve and self.reserve_possible()
+        return set_strut(window.get_xid(), values if active else [0] * 12)
 
     def show_bar(self) -> None:
         self.place()
@@ -266,5 +292,10 @@ class BarWindow(Gtk.Window):
                 context.add_class(name)
             else:
                 context.remove_class(name)
+        if self.vertical:
+            child = self.get_child()
+            if child is not None and child.get_preferred_width()[1] > self.get_allocated_width():
+                self.place()
+                self.apply_strut()
         self.update_button.set_visible(source.mini_update.get_visible())
         self.update_button.set_tooltip_text(source.mini_update.get_tooltip_text() or '')
