@@ -389,14 +389,15 @@ class GuiSmokeTests(unittest.TestCase):
         x, y, width, height = self.window.bar.geometry()
         self.assertEqual((x, width, y + height), (monitor.x, monitor.width, monitor.y + monitor.height))
         for item in (self.window.bar.texts['pump'], self.window.bar.texts['ping'], self.window.bar.texts['transfer']):
-            self.assertGreaterEqual(item.get_width_chars(), 14)
+            self.assertGreaterEqual(item.get_width_chars(), 5)
         self.window.view_combo.set_active_id('widget')
 
 
     def test_chosen_edge_stays_fixed_and_survives_restart(self):
         self.window.view_combo.set_active_id('bar'); self.window.edge_combo.set_active_id('right')
         bar = self.window.bar
-        first = bar.geometry()
+        self.window.metrics_last = 0; self.window.update(); self.drain()
+        first = bar.geometry()  # after the first values; the side bar may widen once
         for _ in range(5):
             self.window.place(); self.window.metrics_last = 0; self.window.update(); self.drain()
         self.window.reserve_check.set_active(False); self.window.reserve_check.set_active(True)
@@ -475,8 +476,8 @@ class GuiSmokeTests(unittest.TestCase):
         self.window.metrics_state = {'disk_read_bytes_sec': 2 * 1024**2, 'disk_write_bytes_sec': 0, 'cpu_clock_mhz': 4650}
         self.window.extras = {'gpu_power_w': 212.4}
         bar.show_values(self.window)
-        self.assertEqual(bar.texts['power'].get_text(), 'GPU 212 W')
-        self.assertEqual(bar.texts['clock'].get_text(), 'CPU 4,7 GHz')
+        self.assertEqual(bar.texts['power'].get_text(), '212 W')
+        self.assertEqual(bar.texts['clock'].get_text(), '4,7 GHz')
         self.assertIn('R 2,0 MiB/s', bar.texts['disk'].get_text())
         panel.reset()
         self.assertIn('audio', bar.items)
@@ -543,6 +544,22 @@ class GuiSmokeTests(unittest.TestCase):
                 delattr(app, name)
             self.window.settings.pop('bar_items', None)
             self.window.view_combo.set_active_id('widget')
+
+    def test_bar_groups_values_with_short_captions(self):
+        from processes import ProgramUsage
+        self.window.view_combo.set_active_id('bar'); self.window.edge_combo.set_active_id('bottom')
+        bar = self.window.bar
+        separators = [child for child in bar.get_child().get_child().get_children()
+                      if isinstance(child, self.Gtk.Separator)]
+        self.assertEqual(len(separators), 6)  # temp | memory | system | cooling | net | audio
+        self.window.top = [ProgramUsage('claude-desktop', 1.0, 2**30, 3, True)]
+        self.window.update_network({'internet_ms': 21, 'internet_status': 'ok', 'connection': 'wlan', 'signal_percent': 65})
+        bar.show_values(self.window)
+        self.assertEqual(bar.texts['top'].get_text(), 'claude-desktop 1 %')
+        self.assertEqual(bar.texts['ping'].get_text(), '21 ms · 65 %')
+        self.assertNotIn('Pumpe', bar.texts['pump'].get_text())
+        self.window.view_combo.set_active_id('widget')
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
