@@ -108,11 +108,22 @@ def de(value, digits=1):
     return f'{value:,.{digits}f}'.replace(',', '\0').replace('.', ',').replace('\0', '.')
 
 
-def level(key, value):
+def level(key, value, limits=LIMITS):
     if value is None:
         return 'level-ok'
-    warn, hot = LIMITS[key]
+    warn, hot = limits[key]
     return 'level-hot' if value >= hot else 'level-warn' if value >= warn else 'level-ok'
+
+
+def load_limits(raw):
+    """Validated user thresholds; invalid entries fall back to the defaults."""
+    limits = dict(LIMITS)
+    if isinstance(raw, dict):
+        for key, value in raw.items():
+            if (key in LIMITS and isinstance(value, list) and len(value) == 2
+                    and all(type(v) is int and 30 <= v <= 115 for v in value) and value[0] < value[1]):
+                limits[key] = (value[0], value[1])
+    return limits
 
 
 def set_level(widget, name):
@@ -225,6 +236,8 @@ class AirWindow(Gtk.ApplicationWindow):
         self.metrics_last = 0
         self.alarm_state = None
         self.hot_keys = set()
+        self.limits = load_limits(self.settings.get('limits'))
+        self.limit_tips = {}
         self.auth_window = None
         self.closed = False
         self.geometries = self.settings.get('geometries', {})
@@ -279,7 +292,7 @@ class AirWindow(Gtk.ApplicationWindow):
         self.temp_labels={}
         for key,title in TEMP_TITLES:
             col=box(spacing=2);add(temps,col,True);add(col,label(title,'brand'));self.temp_labels[key]=add(col,label('—','value'))
-            col.set_tooltip_text(f'Warnung ab {LIMITS[key][0]} °C · Alarm ab {LIMITS[key][1]} °C')
+            self.limit_tips.setdefault(key,[]).append(col)
         history_box=box(spacing=6);history_box.get_style_context().add_class('panel');add(content,history_box)
         add(history_box,label('Temperaturen · letzte 2 Minuten','muted'))
         self.history_chart=add(history_box,Chart(True))
@@ -302,6 +315,7 @@ class AirWindow(Gtk.ApplicationWindow):
         self.curve=add(self.detail,Chart())
         self.curve_note=add(self.detail,label('','muted'));self.curve_note.set_line_wrap(True)
         self.build_control_panel()
+        self.build_settings_panel(content)
         network_box=box(spacing=8);network_box.get_style_context().add_class('panel');add(content,network_box)
         add(network_box,label('WLAN & Verbindung','section'))
         self.network_detail=add(network_box,label('Verbindung wird geprüft …','muted'));self.network_detail.set_line_wrap(True)
@@ -309,6 +323,7 @@ class AirWindow(Gtk.ApplicationWindow):
         footer=box(False);add(content,footer)
         note=label('Restlos Air · Die Regelung läuft auch bei geschlossenem Widget weiter.','muted');note.set_line_wrap(True);add(footer,note,True)
         self.build_compact()
+        self.refresh_limit_tips()
         # Gtk.Stack can select a named child only after that child is visible.
         self.stack.show_all()
         self.stack.set_visible_child_name('compact' if self.compact else 'studio')
@@ -370,6 +385,10 @@ class AirWindow(Gtk.ApplicationWindow):
         add(header,drag,True)
         self.mini_live=add(header,label('LIVE','pill'));self.mini_live.set_valign(Gtk.Align.CENTER)
         self.mini_live.get_style_context().add_class('state-ok')
+        gear=Gtk.Button(label='⚙');gear.get_style_context().add_class('mini-close')
+        gear.set_tooltip_text('Einstellungen öffnen · auch per Klick auf die Werte')
+        gear.get_accessible().set_name('Einstellungen öffnen')
+        gear.connect('clicked',lambda *_:self.set_compact(False));add(header,gear)
         close=Gtk.Button(label='×');close.get_style_context().add_class('mini-close')
         close.set_tooltip_text('Widget ausblenden · über das Tray-Symbol wieder öffnen');close.connect('clicked',lambda *_:self.close())
         add(header,close);add(mini,header)
@@ -384,7 +403,7 @@ class AirWindow(Gtk.ApplicationWindow):
         self.mini_temps={}
         for column,(key,title) in enumerate(TEMP_TITLES):
             tile=box(spacing=0);tile.get_style_context().add_class('tile');tile.set_hexpand(True)
-            tile.set_tooltip_text(f'{title} · Warnung ab {LIMITS[key][0]} °C · Alarm ab {LIMITS[key][1]} °C')
+            self.limit_tips.setdefault(key,[]).append(tile)
             head=add(tile,label(title,'tile-head'));value=add(tile,label('—','tile-value'))
             # GTK-3-Boxen ignorieren CSS-Padding; Innenabstand daher über Label-Ränder.
             for item in (head,value):item.set_margin_start(7);item.set_margin_end(5)
@@ -413,6 +432,48 @@ class AirWindow(Gtk.ApplicationWindow):
         info.attach(self.mini_pump,0,0,1,1);info.attach(self.mini_ping,1,0,1,1)
         info.attach(self.mini_transfer,0,1,1,1);info.attach(self.mini_signal,1,1,1,1)
         add(mini,self.open_studio)
+
+    def build_settings_panel(self,content):
+        panel=box(spacing=8);panel.get_style_context().add_class('panel');add(content,panel)
+        add(panel,label('Warnungen & Widget','section'))
+        add(panel,label('Gelb ab „Warnung“, rot und Benachrichtigung ab „Alarm“. Entwarnung 5 °C darunter.','muted')).set_line_wrap(True)
+        grid=Gtk.Grid(column_spacing=10,row_spacing=6);add(panel,grid)
+        for column,title in enumerate(('','Warnung °C','Alarm °C')):grid.attach(label(title,'muted'),column,0,1,1)
+        self.limit_spins={}
+        for row,(key,title) in enumerate(TEMP_TITLES,1):
+            grid.attach(label(title,'row-name'),0,row,1,1)
+            spins=[]
+            for column,value in enumerate(self.limits[key],1):
+                spin=Gtk.SpinButton.new_with_range(30,115,1);spin.set_value(value);spin.set_numeric(True);spin.set_hexpand(True)
+                spin.get_accessible().set_name(f'{title} {"Warnung" if column==1 else "Alarm"} in °C')
+                spin.connect('value-changed',self.limits_changed,key);grid.attach(spin,column,row,1,1);spins.append(spin)
+            self.limit_spins[key]=spins
+        actions=box(False,8);add(panel,actions)
+        self.limits_feedback=add(actions,label('','muted'),True);self.limits_feedback.set_line_wrap(True)
+        reset=Gtk.Button(label='Standardwerte');reset.connect('clicked',self.reset_limits);add(actions,reset)
+        self.refresh_limit_tips()
+
+    def refresh_limit_tips(self):
+        names=dict(TEMP_TITLES)
+        for key,widgets in self.limit_tips.items():
+            warn,hot=self.limits[key]
+            for widget in widgets:widget.set_tooltip_text(f'{names[key]} · Warnung ab {warn} °C · Alarm ab {hot} °C')
+
+    def limits_changed(self,spin,key):
+        warn,hot=(int(s.get_value()) for s in self.limit_spins[key])
+        if warn>=hot:
+            self.limits_feedback.set_text(dict(TEMP_TITLES)[key]+': Warnung muss unter dem Alarm liegen.');return
+        self.limits[key]=(warn,hot);self.limits_feedback.set_text('Gespeichert.')
+        self.settings['limits']={k:list(v) for k,v in self.limits.items() if v!=LIMITS[k]}
+        self.refresh_limit_tips();self.save();self.update()
+
+    def reset_limits(self,*_):
+        for key,spins in self.limit_spins.items():
+            for spin,value in zip(spins,LIMITS[key]):
+                spin.handler_block_by_func(self.limits_changed);spin.set_value(value);spin.handler_unblock_by_func(self.limits_changed)
+        self.limits=dict(LIMITS);self.settings.pop('limits',None)
+        self.limits_feedback.set_text('Standardwerte wiederhergestellt.')
+        self.refresh_limit_tips();self.save();self.update()
 
     def pin_toggled(self,button):
         on_top=button.get_active()
@@ -548,7 +609,7 @@ class AirWindow(Gtk.ApplicationWindow):
         for key in self.temp_labels:
             value=self.latest.get(key);text='—' if value is None else f'{value:.0f}°'
             target=self.mini_temps[key] if self.compact else self.temp_labels[key]
-            target.set_text(text);set_level(target,level(key,value))
+            target.set_text(text);set_level(target,level(key,value,self.limits))
         if self.compact:
             if now-self.pump_last>=2:self.refresh_pump()
             self.show_pump(self.pump_rpm if now-self.pump_read_at<=10 else None)
@@ -779,12 +840,12 @@ class AirWindow(Gtk.ApplicationWindow):
 
     def check_alarms(self):
         # Hysterese: Alarm ab Grenzwert, Entwarnung erst 5 °C darunter – kein Benachrichtigungs-Flattern.
-        for key,(warn,hot) in LIMITS.items():
+        for key,(warn,hot) in self.limits.items():
             value=self.latest.get(key)
             if value is None:continue
             if value>=hot:self.hot_keys.add(key)
             elif value<hot-HYSTERESIS:self.hot_keys.discard(key)
-        warm=any(self.latest.get(k) is not None and self.latest[k]>=LIMITS[k][0] for k in LIMITS)
+        warm=any(self.latest.get(k) is not None and self.latest[k]>=self.limits[k][0] for k in LIMITS)
         missing=self.latest.get('cpu') is None or self.latest.get('gpu') is None
         names=dict(TEMP_TITLES)
         alarm=('Temperatur hoch: '+', '.join(names[k] for k in LIMITS if k in self.hot_keys)) if self.hot_keys else 'Sensordaten fehlen' if missing else None

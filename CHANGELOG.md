@@ -1,5 +1,11 @@
 # Änderungen
 
+## 1.3.0 – 2026-10-22
+
+- Zahnrad ⚙ im Widget öffnet die Einstellungen (Klick auf die Werte weiterhin auch).
+- Neuer Bereich „Warnungen & Widget“ im Studio: Warn- und Alarmgrenzen für CPU, GPU, Hotspot und SSD einstellbar, gespeichert, mit „Standardwerte“.
+- Ungültige Grenzwerte (Warnung ≥ Alarm) werden abgelehnt.
+
 ## 1.2.0 – 2026-10-22
 
 - Widget neu gestaltet: 300 statt 390 px breit, Design wie Restlos Bewerbung und Uninstaller.

@@ -17,7 +17,7 @@ Gerätewechsel. Beide Widgets teilen sich einen Prozess und das Tray-Symbol.
 
 Die Abbildungen zeigen die echte Oberfläche mit Beispielwerten.
 
-[Download Version 1.2.0](https://github.com/jurkast/restlos-air/releases/tag/v1.2.0)
+[Download Version 1.3.0](https://github.com/jurkast/restlos-air/releases/tag/v1.3.0)
 · [Fehler melden](https://github.com/jurkast/restlos-air/issues)
 
 ## Funktionen
@@ -31,7 +31,7 @@ Die Abbildungen zeigen die echte Oberfläche mit Beispielwerten.
 - Manuelle Lüfterleistung von 40 bis 100 % und drei editierbare Kennlinienpunkte.
 - CPU-, GPU- oder gemeinsamer Kühlbedarf als Kennlinienquelle; 100 % spätestens bei 85 °C.
 - Wiederherstellung der gesicherten vorherigen Regelung.
-- Ping zum Router und zu 1.2.0.1; Anzeige des ICMP-Paketverlusts im Studio.
+- Ping zum Router und zu 1.3.0.1; Anzeige des ICMP-Paketverlusts im Studio.
 - Bildschirmwahl, Position und Anschlussnamen im Benutzerprofil.
 - CPU-/GPU-Auslastung sowie verwendeter/gesamter RAM und Grafikspeicher.
 - Aktive WLAN-Signalstärke und Empfangs-/Senderate der Standardverbindung.
@@ -68,12 +68,12 @@ benötigt NetworkManager mit `nmcli`; ohne diesen Dienst bleiben Ping und Datenr
    einrichten. Sein Dienst muss die Hardware erkennen. Restlos Air richtet selbst
    kein fremdes Paketrepository ein.
 2. Das `.deb` und die `.deb.sha256` von der
-   [Release-Seite](https://github.com/jurkast/restlos-air/releases/tag/v1.2.0) herunterladen.
+   [Release-Seite](https://github.com/jurkast/restlos-air/releases/tag/v1.3.0) herunterladen.
 3. Im Downloadordner prüfen und installieren:
 
 ```bash
-sha256sum -c restlos-air_1.2.0_all.deb.sha256
-sudo apt install ./restlos-air_1.2.0_all.deb
+sha256sum -c restlos-air_1.3.0_all.deb.sha256
+sudo apt install ./restlos-air_1.3.0_all.deb
 restlos-air
 ```
 
@@ -97,12 +97,13 @@ Einstellungsdateien. Die Verbindung geht an `127.0.0.1:11987`.
 | GPU-Hotspot (Junction) | 90 °C | 100 °C |
 | SSD (NVMe) | 60 °C | 70 °C |
 
+Die Werte lassen sich im Studio unter **Warnungen & Widget** ändern; **Standardwerte** setzt sie zurück.
 Eine Warnung endet erst 5 °C unter dem Alarmwert. Die Statusplakette im Widget zeigt
 LIVE, WARM, HEISS oder DATEN FEHLEN.
 
 ## Bedienung
 
-Auf die Widgetwerte klicken, um die Einstellungen zu öffnen. Das Tray-Menü bietet
+Auf die Widgetwerte oder das Zahnrad ⚙ klicken, um die Einstellungen zu öffnen. Das Tray-Menü bietet
 Widget, Einstellungen, Ausblenden und Beenden. Das Kreuz im Studio führt zurück
 zum Widget; das Kreuz im Widget blendet es aus. **Strg+M** wechselt die Ansicht,
 **Escape** schließt die große Ansicht beziehungsweise blendet das Widget aus.
@@ -142,7 +143,7 @@ Ereignisse und Reglerbewegungen werden gebündelt; es gibt keine periodische
 Audioabfrage im normalen Betrieb. Bei Ausfall wird mit wachsendem Abstand erneut
 verbunden. Audio und Lüftersteuerung haben getrennte Hintergrundaufgaben.
 
-Alle fünf Sekunden wird je ein kleines ICMP-Paket zum Gateway und zu `1.2.0.1`
+Alle fünf Sekunden wird je ein kleines ICMP-Paket zum Gateway und zu `1.3.0.1`
 gesendet. Das ist kein automatischer Spielserver-Ping. Paketverlust bezieht sich auf
 die letzten bis zu zwölf Internetproben. „Keine Antwort“ kann eine ICMP-Sperre
 bedeuten und beweist keinen Internetausfall. Die App führt keine WLAN-Scans durch.
