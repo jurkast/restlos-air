@@ -704,8 +704,10 @@ class AirWindow(Gtk.ApplicationWindow):
         if self.bar_visible():
             app=self.get_application()
             # Audio in der Leiste braucht den Audiodienst auch bei ausgeblendetem Audio-Widget.
-            if 'audio' in self.bar.items and hasattr(app,'ensure_audio') and not app.audio_window:
-                app.ensure_audio()
+            # Nicht direkt erzeugen: das Audio-Fenster meldet sich beim Start selbst hier zurück.
+            if 'audio' in self.bar.items and hasattr(app,'ensure_audio') and not app.audio_window and not app.audio_pending:
+                app.audio_pending=True
+                GLib.idle_add(lambda:app.ensure_audio() and False)  # one-shot: a truthy return would repeat forever
             try:self.bar.show_values(self)
             except Exception:report_error('Leiste')
 
@@ -1221,6 +1223,8 @@ class AirApp(Gtk.Application):
         self.css_provider=None
         self.window=None
         self.audio_window=None
+        self.audio_creating=False
+        self.audio_pending=False
         self.requested_compact=True
         self.indicator=None
         self.held=False
@@ -1336,9 +1340,12 @@ class AirApp(Gtk.Application):
 
     def ensure_audio(self):
         """Audio state for the bar without showing the separate audio widget."""
-        if not self.audio_window:
+        if not self.audio_window and not self.audio_creating:
             from audio_widget import AudioWindow
-            self.audio_window=AudioWindow(self,self.window)
+            # Guard: AudioWindow.__init__ calls back into push_bar before it is assigned.
+            self.audio_creating=True
+            try:self.audio_window=AudioWindow(self,self.window)
+            finally:self.audio_creating=False;self.audio_pending=False
         return self.audio_window
 
     def show_audio(self,*_):
