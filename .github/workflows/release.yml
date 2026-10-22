@@ -1,0 +1,147 @@
+# Baut, signiert und veröffentlicht Restlos Air automatisch – wie Bewerbung und Uninstaller:
+#  - app/version.py von Hand erhöht (z. B. 1.5.0) → genau diese Version erscheint.
+#  - Programm geändert, Version nicht erhöht → Patch-Nummer steigt automatisch
+#    (1.4.0 → 1.4.1), wird auf main festgehalten und veröffentlicht.
+#  - Nur Doku/Tests/Workflows geändert → kein Release.
+# Installierte Versionen ab 1.4.0 finden das Update stündlich selbst und bieten
+# „Jetzt neu starten und aktualisieren“ an.
+#
+# Einmalig: Settings → Secrets and variables → Actions → New repository secret
+#   Name: RESTLOS_SIGNING_KEY
+#   Wert: privater Ed25519-Schlüssel (private.pem, inkl. BEGIN/END) – derselbe wie bei Restlos Bewerbung.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Quellcode auschecken
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Version bestimmen
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="$(python3 scripts/release_version.py current)"
+          LATEST="$(gh release view --json tagName --jq .tagName 2>/dev/null | sed 's/^v//' || true)"
+          if ! gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "Neue Version $VERSION."
+            { echo "build=true"; echo "version=$VERSION"; echo "since=$LATEST"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "::notice::Tag v$VERSION fehlt lokal – kein automatisches Release."
+            echo "build=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          CHANGED="$(git diff --name-only "v$VERSION" HEAD -- app packaging scripts || true)"
+          if [ -z "$CHANGED" ]; then
+            echo "::notice::Keine Programmänderung seit v$VERSION – kein neues Release."
+            echo "build=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "Geänderte Programmdateien:"; echo "$CHANGED"
+          NEXT="$(python3 scripts/release_version.py next-patch)"
+          while gh release view "v$NEXT" >/dev/null 2>&1; do
+            NEXT="$(python3 -c 'import sys;a,b,c=map(int,sys.argv[1].split("."));print(f"{a}.{b}.{c+1}")' "$NEXT")"
+          done
+          python3 scripts/release_version.py set "$NEXT"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Version $NEXT (automatisches Release)"
+          git push origin HEAD:main
+          { echo "build=true"; echo "version=$NEXT"; echo "since=$VERSION"; } >> "$GITHUB_OUTPUT"
+
+      - name: Signierschlüssel vorhanden?
+        if: steps.version.outputs.build == 'true'
+        env:
+          SIGNING_KEY: ${{ secrets.RESTLOS_SIGNING_KEY }}
+        run: |
+          if [ -z "$SIGNING_KEY" ]; then
+            echo "::error::Secret RESTLOS_SIGNING_KEY fehlt (Settings → Secrets and variables → Actions)."; exit 1
+          fi
+
+      - name: Systemabhängigkeiten installieren
+        if: steps.version.outputs.build == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install --no-install-recommends -y -qq \
+            python3 python3-gi python3-cairo python3-gi-cairo gir1.2-gtk-3.0 gir1.2-secret-1 \
+            dbus xvfb xauth dpkg-dev openssl
+
+      - name: Vollständige Prüfung
+        if: steps.version.outputs.build == 'true'
+        run: |
+          /usr/bin/python3 -m unittest discover -s tests -p 'test_*.py' -v
+          dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/gui_smoke.py
+          dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/audio_gui_smoke.py
+
+      - name: Release-Dateien bauen und signieren
+        if: steps.version.outputs.build == 'true'
+        env:
+          SIGNING_KEY: ${{ secrets.RESTLOS_SIGNING_KEY }}
+        run: |
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          /usr/bin/python3 scripts/build_release.py dist
+          /usr/bin/python3 scripts/build_deb.py
+          KEY="$RUNNER_TEMP/private.pem"
+          (umask 077; printf '%s\n' "$SIGNING_KEY" > "$KEY")
+          /usr/bin/python3 scripts/sign_update.py dist "$KEY"
+          rm -f "$KEY"
+          cd dist
+          sha256sum --check RestlosAir-*.sha256
+          sha256sum --check restlos-air_*_all.deb.sha256
+          ls -la
+
+      - name: Release-Notizen aus dem Änderungsprotokoll
+        if: steps.version.outputs.build == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SINCE: ${{ steps.version.outputs.since }}
+        run: |
+          python3 - <<'PY'
+          import os, re, subprocess
+          version, since = os.environ["VERSION"], os.environ["SINCE"]
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          match = re.search(r"^## " + re.escape(version) + r"\b.*?(?=^## |\Z)", text, re.S | re.M)
+          if match:
+              notes = match.group(0).strip()
+          else:
+              span = f"v{since}..HEAD" if since else "HEAD~20..HEAD"
+              log = subprocess.run(["git", "log", "--no-merges", "--pretty=- %s", span], capture_output=True, text=True).stdout
+              lines = [line for line in log.splitlines() if "automatisches Release" not in line]
+              notes = f"## {version}\n\n" + ("\n".join(lines) or "- Verbesserungen und Fehlerbehebungen")
+          notes += ("\n\nInstallierte Versionen ab 1.4.0 aktualisieren sich selbst (signiert geprüft) – "
+                    "„Jetzt neu starten und aktualisieren“ im Widget oder Studio wählen.")
+          open("RELEASE-NOTES.md", "w", encoding="utf-8").write(notes + "\n")
+          PY
+
+      - name: Auf GitHub veröffentlichen
+        if: steps.version.outputs.build == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "v$V" --target "$(git rev-parse HEAD)" \
+            "dist/RestlosAir-$V.tar.gz" "dist/RestlosAir-$V.sha256" \
+            "dist/restlos-air_${V}_all.deb" "dist/restlos-air_${V}_all.deb.sha256" \
+            dist/restlos-update.json dist/restlos-update.sig \
+            --title "Restlos Air $V" --notes-file RELEASE-NOTES.md --latest
+
+      - name: Schlüssel sicher entfernen
+        if: always()
+        run: rm -f "$RUNNER_TEMP/private.pem"

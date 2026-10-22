@@ -317,5 +317,22 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertEqual(self.air.load_limits({'gpu': [60, 70]})['gpu'], (60, 70))
 
 
+    def test_update_status_shows_restart_buttons_only_when_ready(self):
+        from types import SimpleNamespace
+        status = SimpleNamespace(automatic=True, checked=None, restart_ready=False, kind='current',
+                                 version='', pending='', detail='')
+        self.window.show_update_status(status)
+        self.assertIn('ist aktuell', self.window.update_info.get_text())
+        self.assertFalse(self.window.mini_update.get_visible())
+        self.assertFalse(self.window.update_restart.get_visible())
+        ready = SimpleNamespace(**{**vars(status), 'restart_ready': True, 'pending': '9.9.9', 'kind': 'ready'})
+        self.window.show_update_status(ready)
+        self.assertTrue(self.window.mini_update.get_visible())
+        self.assertTrue(self.window.update_restart.get_visible())
+        self.assertIn('9.9.9', self.window.update_info.get_text())
+        self.window.show_update_status(None, supported=False)
+        self.assertIn('git pull', self.window.update_info.get_text())
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
