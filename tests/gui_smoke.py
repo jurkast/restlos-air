@@ -285,5 +285,37 @@ class GuiSmokeTests(unittest.TestCase):
         self.window.pin.set_active(True)
         self.assertTrue(self.window.settings['on_top'])
 
+    def test_gear_and_values_open_settings(self):
+        header = self.window.stack.get_child_by_name('compact').get_children()[0]
+        gear = [c for c in header.get_children() if isinstance(c, self.Gtk.Button) and c.get_label() == '⚙'][0]
+        gear.clicked()
+        self.assertFalse(self.window.compact)
+        self.window.set_compact(True)
+        self.window.open_studio.clicked()
+        self.assertFalse(self.window.compact)
+
+    def test_thresholds_are_editable_saved_and_validated(self):
+        warn, hot = self.window.limit_spins['cpu']
+        hot.set_value(80); warn.set_value(70)
+        self.assertEqual(self.window.limits['cpu'], (70, 80))
+        self.assertEqual(self.window.settings['limits'], {'cpu': [70, 80]})
+        hot_data = fake_sensor_data(False); hot_data['cpu'] = 81.
+        self.snapshot_patch.stop()
+        try:
+            with patch.object(self.air, 'snapshot', return_value=hot_data):
+                self.window.update()
+        finally:
+            self.snapshot_patch.start()
+        self.assertEqual(self.window.mini_live.get_text(), 'HEISS')
+        warn.set_value(90)
+        self.assertEqual(self.window.limits['cpu'], (70, 80))
+        self.assertIn('unter dem Alarm', self.window.limits_feedback.get_text())
+        self.window.reset_limits()
+        self.assertEqual(self.window.limits['cpu'], (75, 85))
+        self.assertNotIn('limits', self.window.settings)
+        self.assertEqual(self.air.load_limits({'cpu': [90, 80], 'gpu': [60, 70], 'x': [1, 2]})['cpu'], (75, 85))
+        self.assertEqual(self.air.load_limits({'gpu': [60, 70]})['gpu'], (60, 70))
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
