@@ -17,7 +17,7 @@ Gerätewechsel. Beide Widgets teilen sich einen Prozess und das Tray-Symbol.
 
 Die Abbildungen zeigen die echte Oberfläche mit Beispielwerten.
 
-[Download Version 1.3.0](https://github.com/jurkast/restlos-air/releases/tag/v1.3.0)
+[Download Version 1.4.0](https://github.com/jurkast/restlos-air/releases/tag/v1.4.0)
 · [Fehler melden](https://github.com/jurkast/restlos-air/issues)
 
 ## Funktionen
@@ -31,7 +31,7 @@ Die Abbildungen zeigen die echte Oberfläche mit Beispielwerten.
 - Manuelle Lüfterleistung von 40 bis 100 % und drei editierbare Kennlinienpunkte.
 - CPU-, GPU- oder gemeinsamer Kühlbedarf als Kennlinienquelle; 100 % spätestens bei 85 °C.
 - Wiederherstellung der gesicherten vorherigen Regelung.
-- Ping zum Router und zu 1.3.0.1; Anzeige des ICMP-Paketverlusts im Studio.
+- Ping zum Router und zu 1.1.1.1; Anzeige des ICMP-Paketverlusts im Studio.
 - Bildschirmwahl, Position und Anschlussnamen im Benutzerprofil.
 - CPU-/GPU-Auslastung sowie verwendeter/gesamter RAM und Grafikspeicher.
 - Aktive WLAN-Signalstärke und Empfangs-/Senderate der Standardverbindung.
@@ -68,12 +68,12 @@ benötigt NetworkManager mit `nmcli`; ohne diesen Dienst bleiben Ping und Datenr
    einrichten. Sein Dienst muss die Hardware erkennen. Restlos Air richtet selbst
    kein fremdes Paketrepository ein.
 2. Das `.deb` und die `.deb.sha256` von der
-   [Release-Seite](https://github.com/jurkast/restlos-air/releases/tag/v1.3.0) herunterladen.
+   [Release-Seite](https://github.com/jurkast/restlos-air/releases/tag/v1.4.0) herunterladen.
 3. Im Downloadordner prüfen und installieren:
 
 ```bash
-sha256sum -c restlos-air_1.3.0_all.deb.sha256
-sudo apt install ./restlos-air_1.3.0_all.deb
+sha256sum -c restlos-air_1.4.0_all.deb.sha256
+sudo apt install ./restlos-air_1.4.0_all.deb
 restlos-air
 ```
 
@@ -143,10 +143,27 @@ Ereignisse und Reglerbewegungen werden gebündelt; es gibt keine periodische
 Audioabfrage im normalen Betrieb. Bei Ausfall wird mit wachsendem Abstand erneut
 verbunden. Audio und Lüftersteuerung haben getrennte Hintergrundaufgaben.
 
-Alle fünf Sekunden wird je ein kleines ICMP-Paket zum Gateway und zu `1.3.0.1`
+Alle fünf Sekunden wird je ein kleines ICMP-Paket zum Gateway und zu `1.1.1.1`
 gesendet. Das ist kein automatischer Spielserver-Ping. Paketverlust bezieht sich auf
 die letzten bis zu zwölf Internetproben. „Keine Antwort“ kann eine ICMP-Sperre
 bedeuten und beweist keinen Internetausfall. Die App führt keine WLAN-Scans durch.
+
+## Automatische Updates
+
+Ab Version 1.4.0 aktualisiert sich Restlos Air selbst – wie Restlos Bewerbung und Uninstaller:
+
+- Kurz nach dem Start und danach stündlich wird das neueste GitHub-Release geprüft.
+- Die Update-Beschreibung ist mit Ed25519 signiert (derselbe Schlüssel wie bei Bewerbung und
+  Uninstaller); Größe und SHA-256 des Archivs werden geprüft.
+- Das Update wird ohne Rootrechte nach `~/.local/share/restlos-air-updates/` entpackt. Das
+  Systempaket, der Autostart und die Treiberkonfiguration bleiben unverändert.
+- Im Widget erscheint **UPDATE**, im Studio **Jetzt neu starten und aktualisieren**, zusätzlich
+  eine Benachrichtigung. Ohne Klick wird das Update beim nächsten Anmelden aktiv.
+- Startet eine neue Version nicht, schaltet Restlos Air sofort auf die vorherige zurück und
+  überspringt nur diese Version.
+- Unter **Updates** im Studio lässt sich die stündliche Prüfung abschalten.
+
+Versionen bis 1.3.0 haben den Updater noch nicht und brauchen einmalig eine Installation von 1.4.0.
 
 ## Aus dem Quellcode
 

@@ -3,6 +3,8 @@
 import json
 import os
 import signal
+import sys
+import threading
 import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
@@ -14,6 +16,7 @@ from gi.repository import Gtk, Gdk, Gio, GLib
 from sensors import snapshot, cached_pump
 from metrics import MetricsSampler
 from coolercontrol import BackendError, Client, secret_store, validate_curve
+from version import __version__
 
 BASE = Path(__file__).resolve().parent
 COMPACT_WIDTH = 300
@@ -77,6 +80,8 @@ separator { background-color: #3a505c; min-height: 1px; }
 check { background-color: #172a35; border: 1px solid #58717a; }
 check:checked { background-color: #167c77; border-color: #167c77; color: #ffffff; }
 menu, .menu { background-color: #20323e; color: #e3edef; }
+button.update-pill { background-color: #167c77; border-color: #167c77; color: #ffffff; border-radius: 999px; padding: 0 8px; min-height: 16px; font-size: 9px; font-weight: 800; letter-spacing: 1px; }
+button.update-pill:hover { background-color: #1b8f89; }
 '''
 
 
@@ -320,8 +325,9 @@ class AirWindow(Gtk.ApplicationWindow):
         add(network_box,label('WLAN & Verbindung','section'))
         self.network_detail=add(network_box,label('Verbindung wird geprüft …','muted'));self.network_detail.set_line_wrap(True)
         add(network_box,label('Messung alle 5 Sekunden · Internetziel 1.1.1.1','muted'))
+        self.build_update_panel(content)
         footer=box(False);add(content,footer)
-        note=label('Restlos Air · Die Regelung läuft auch bei geschlossenem Widget weiter.','muted');note.set_line_wrap(True);add(footer,note,True)
+        note=label(f'Restlos Air {__version__} · Die Regelung läuft auch bei geschlossenem Widget weiter.','muted');note.set_line_wrap(True);add(footer,note,True)
         self.build_compact()
         self.refresh_limit_tips()
         # Gtk.Stack can select a named child only after that child is visible.
@@ -385,6 +391,10 @@ class AirWindow(Gtk.ApplicationWindow):
         add(header,drag,True)
         self.mini_live=add(header,label('LIVE','pill'));self.mini_live.set_valign(Gtk.Align.CENTER)
         self.mini_live.get_style_context().add_class('state-ok')
+        self.mini_update=Gtk.Button(label='UPDATE');self.mini_update.get_style_context().add_class('update-pill')
+        self.mini_update.set_valign(Gtk.Align.CENTER);self.mini_update.set_no_show_all(True)
+        self.mini_update.connect('clicked',lambda *_:self.get_application().restart_for_update())
+        add(header,self.mini_update)
         gear=Gtk.Button(label='⚙');gear.get_style_context().add_class('mini-close')
         gear.set_tooltip_text('Einstellungen öffnen · auch per Klick auf die Werte')
         gear.get_accessible().set_name('Einstellungen öffnen')
@@ -432,6 +442,49 @@ class AirWindow(Gtk.ApplicationWindow):
         info.attach(self.mini_pump,0,0,1,1);info.attach(self.mini_ping,1,0,1,1)
         info.attach(self.mini_transfer,0,1,1,1);info.attach(self.mini_signal,1,1,1,1)
         add(mini,self.open_studio)
+
+    def build_update_panel(self,content):
+        panel=box(spacing=8);panel.get_style_context().add_class('panel');add(content,panel)
+        add(panel,label('Updates','section'))
+        self.update_info=add(panel,label('Noch nicht geprüft.','muted'));self.update_info.set_line_wrap(True)
+        self.update_auto=Gtk.CheckButton(label='Stündlich prüfen und im Hintergrund vorbereiten')
+        self.update_auto.set_active(True);self.update_auto.connect('toggled',self.update_auto_toggled);add(panel,self.update_auto)
+        actions=box(False,8);add(panel,actions)
+        self.update_check=Gtk.Button(label='Jetzt prüfen')
+        self.update_check.connect('clicked',lambda *_:self.get_application().check_updates_now());add(actions,self.update_check,True)
+        self.update_restart=Gtk.Button(label='Jetzt neu starten und aktualisieren');self.update_restart.get_style_context().add_class('primary')
+        self.update_restart.set_no_show_all(True)
+        self.update_restart.connect('clicked',lambda *_:self.get_application().restart_for_update());add(actions,self.update_restart,True)
+
+    def update_auto_toggled(self,button):
+        app=self.get_application()
+        if app and app.updater:
+            try:app.updater.save_config(automatic=button.get_active())
+            except Exception as error:self.update_info.set_text(str(error))
+
+    def show_update_status(self,status,busy=False,supported=True):
+        if not supported:
+            self.update_info.set_text(f'Version {__version__} · Start aus dem Quellordner: Updates mit „git pull“ holen.')
+            for item in (self.update_check,self.update_auto):item.set_sensitive(False)
+            return
+        self.update_check.set_sensitive(not busy)
+        if busy:
+            self.update_info.set_text(f'Version {__version__} · Suche nach Updates …');return
+        self.update_auto.handler_block_by_func(self.update_auto_toggled)
+        self.update_auto.set_active(status.automatic)
+        self.update_auto.handler_unblock_by_func(self.update_auto_toggled)
+        checked=time.strftime(' · geprüft %H:%M',time.localtime(status.checked)) if status.checked else ''
+        if status.restart_ready:
+            text=f'Version {status.pending} ist geprüft und bereit. Ein Neustart dauert wenige Sekunden.'
+        elif status.kind=='current':text=f'Version {__version__} ist aktuell{checked}.'
+        elif status.kind=='rolled-back':text=f'Update {status.version} konnte nicht starten. Restlos Air nutzt wieder die vorherige Version.'
+        elif status.kind=='blocked':text=f'Version {__version__}. Update {status.version} wird übersprungen, weil es nicht starten konnte.'
+        elif status.kind=='error':text=f'Version {__version__}. {status.detail}{checked}'
+        else:text=f'Version {__version__} · noch nicht geprüft.'
+        self.update_info.set_text(text)
+        for button in (self.update_restart,self.mini_update):
+            button.set_visible(status.restart_ready)
+        self.mini_update.set_tooltip_text(f'Version {status.pending} bereit · klicken zum Neustarten und Aktualisieren' if status.restart_ready else '')
 
     def build_settings_panel(self,content):
         panel=box(spacing=8);panel.get_style_context().add_class('panel');add(content,panel)
@@ -879,6 +932,19 @@ class AirApp(Gtk.Application):
         self.requested_compact=True
         self.indicator=None
         self.held=False
+        self.restart_requested=False
+        self.update_busy=False
+        self.announced=''
+        # Updates only when started through the installed launcher (run_air.py); a source checkout uses git pull.
+        self.update_supported=os.environ.get('RESTLOS_AIR_LAUNCH_CHOSEN')=='1'
+        self.updater=None
+        if self.update_supported:
+            try:
+                from updater import Updater
+                self.updater=Updater()
+                self.update_supported=self.updater.supported()
+            except Exception:
+                self.updater=None;self.update_supported=False
     def do_startup(self):
         Gtk.Application.do_startup(self)
         for signum in (signal.SIGTERM,signal.SIGINT):
@@ -897,11 +963,78 @@ class AirApp(Gtk.Application):
             self.window=AirWindow(self)
             self.create_indicator()
             if not self.held:self.hold();self.held=True
+            action=Gio.SimpleAction.new('restart-update',None)
+            action.connect('activate',lambda *_:self.restart_for_update());self.add_action(action)
+            GLib.idle_add(self.confirm_started)
+            if self.update_supported:
+                from updater import CHECK_INTERVAL_SECONDS,FIRST_CHECK_DELAY_SECONDS
+                GLib.timeout_add_seconds(FIRST_CHECK_DELAY_SECONDS,self.automatic_check,False)
+                GLib.timeout_add_seconds(CHECK_INTERVAL_SECONDS,self.automatic_check,True)
         self.window.show_view(self.requested_compact)
         if self.window.settings.get('audio_visible',True):
             # X11 applies the restored Air size asynchronously; use its final
             # position before placing the companion directly underneath it.
             GLib.timeout_add(250,self.show_audio)
+
+    def confirm_started(self):
+        if not self.window:return False
+        if not self.update_supported:
+            self.window.show_update_status(None,supported=False);return False
+        try:self.updater.startup_ready()
+        except Exception:pass
+        status=self.update_status()
+        if status:
+            self.window.show_update_status(status)
+            if status.kind=='rolled-back':
+                note=Gio.Notification.new('Restlos Air · Update zurückgenommen')
+                note.set_body('Das letzte Update konnte nicht starten. Die vorherige Version läuft wieder.')
+                self.send_notification('update',note)
+            elif status.restart_ready:self.announce(status)
+        return False
+
+    def update_status(self):
+        try:return self.updater.status() if self.updater else None
+        except Exception:return None
+
+    def automatic_check(self,repeat):
+        try:automatic=self.updater.config()['automatic']
+        except Exception:automatic=False
+        if automatic:self.check_updates_now()
+        return repeat
+
+    def check_updates_now(self):
+        if not self.update_supported or self.update_busy:return
+        self.update_busy=True
+        if self.window:self.window.show_update_status(None,busy=True)
+        def work():
+            try:status=self.updater.check()
+            except Exception:status=self.update_status()
+            GLib.idle_add(self.check_done,status)
+        threading.Thread(target=work,name='restlos-air-update',daemon=True).start()
+
+    def check_done(self,status):
+        self.update_busy=False
+        if self.window and status:
+            self.window.show_update_status(status)
+            if status.restart_ready:self.announce(status)
+        return False
+
+    def announce(self,status):
+        if self.announced==status.pending:return
+        self.announced=status.pending
+        note=Gio.Notification.new(f'Restlos Air {status.pending} ist bereit')
+        note.set_body('Signiert geprüft. Neustart dauert wenige Sekunden, die Lüfterregelung läuft weiter.')
+        note.add_button('Jetzt neu starten und aktualisieren','app.restart-update')
+        self.send_notification('update',note)
+
+    def restart_for_update(self):
+        status=self.update_status()
+        if not status or not status.restart_ready:
+            if self.window:self.window.update_info.set_text('Es ist kein vorbereitetes Update vorhanden.')
+            return
+        self.restart_requested=True
+        self.withdraw_notification('update')
+        self.quit_app()
 
     def show_audio(self,*_):
         if not self.audio_window:
@@ -948,6 +1081,18 @@ class AirApp(Gtk.Application):
         self.quit()
 
 
+def restart(base):
+    # The base launcher chooses again (verified new version or fallback).
+    environment={k:v for k,v in os.environ.items() if k not in ('RESTLOS_AIR_LAUNCH_CHOSEN','RESTLOS_AIR_BASE_DIR')}
+    os.execve(sys.executable,[sys.executable,'-I','-B',str(Path(base)/'run_air.py')],environment)
+
+
+def main(argv):
+    app=AirApp();code=app.run(argv)
+    if app.restart_requested and app.updater:
+        restart(app.updater.base)
+    return code
+
+
 if __name__=='__main__':
-    import sys
-    raise SystemExit(AirApp().run(sys.argv))
+    raise SystemExit(main(sys.argv))

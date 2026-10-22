@@ -1,5 +1,13 @@
 # Änderungen
 
+## 1.4.0 – 2026-10-22
+
+- Automatische, signierte Updates wie bei Restlos Bewerbung und Uninstaller: stündliche Prüfung,
+  Ed25519-Signatur, SHA-256, Installation ohne Rootrechte, sofortiger Rückfall bei Startfehlern.
+- **UPDATE** im Widget und „Jetzt neu starten und aktualisieren“ im Studio, Benachrichtigung mit Neustart-Knopf.
+- Neuer Bereich „Updates“ im Studio mit Version, Status, „Jetzt prüfen“ und Schalter für die stündliche Prüfung.
+- Release-Workflow: Jede Programmänderung auf `main` erzeugt automatisch ein signiertes Release.
+
 ## 1.3.0 – 2026-10-22
 
 - Zahnrad ⚙ im Widget öffnet die Einstellungen (Klick auf die Werte weiterhin auch).

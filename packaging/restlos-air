@@ -1,2 +1,2 @@
 #!/bin/sh
-exec /usr/bin/python3 /usr/lib/restlos-air/air_studio.py "$@"
+exec /usr/bin/python3 -I -B /usr/lib/restlos-air/run_air.py "$@"

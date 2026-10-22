@@ -20,11 +20,15 @@ DIST = ROOT / 'dist'
 
 
 def package_version():
+    """app/version.py is the source; packaging/control must agree (release_version.py sets both)."""
+    match = re.search(r'^__version__ = "([^"]+)"$', (APP / 'version.py').read_text(encoding='utf-8'), re.M)
     versions = [line.partition(':')[2].strip()
                 for line in (RESOURCES / 'control').read_text(encoding='utf-8').splitlines()
                 if line.startswith('Version:')]
-    if len(versions) != 1 or not re.fullmatch(r'[0-9][A-Za-z0-9.+:~\-]*', versions[0]):
+    if match is None or len(versions) != 1 or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', versions[0]):
         raise ValueError('Die Paketversion fehlt oder ist ungültig.')
+    if versions[0] != match.group(1):
+        raise ValueError(f'Versionen stimmen nicht überein: app/version.py {match.group(1)}, packaging/control {versions[0]}.')
     return versions[0]
 
 
@@ -38,8 +42,10 @@ def copy(stage, source, destination, mode=0o644):
 def prepare(stage, epoch):
     for source in sorted(APP.glob('*.py')):
         copy(stage, source, 'usr/lib/restlos-air/' + source.name)
-    if not (stage / 'usr/lib/restlos-air/air_studio.py').is_file():
-        raise FileNotFoundError('app/air_studio.py fehlt.')
+    copy(stage, APP / 'update-public.pem', 'usr/lib/restlos-air/update-public.pem')
+    for required in ('air_studio.py', 'run_air.py', 'updater.py', 'version.py'):
+        if not (stage / 'usr/lib/restlos-air' / required).is_file():
+            raise FileNotFoundError('app/' + required + ' fehlt.')
     for name in ('control', 'conffiles'):
         copy(stage, RESOURCES / name, 'DEBIAN/' + name)
     copy(stage, RESOURCES / 'postinst', 'DEBIAN/postinst', 0o755)
