@@ -23,9 +23,9 @@ METRICS = (('cpu', 'CPU'), ('gpu', 'GPU'), ('hotspot', 'HOT'), ('ssd', 'SSD'))
 CAPTIONS = {'top': ('TOP', 18), 'pump': ('PUMPE', 11), 'ping': ('PING', 12), 'transfer': ('NETZ', 19),
             'disk': ('DISK', 19), 'power': ('GPU', 5), 'clock': ('TAKT', 8)}
 # Dichte-Stufen, wenn nicht alles in die Monitorbreite passt: Abstand, Balkenbreite, Feldbreiten.
-_NORMAL = {'spacing': 12, 'meter': 70, 'chars': {}, 'short': False, 'head': 'RESTLOS AIR', 'rows': 1}
-_DENSE = {'spacing': 8, 'meter': 46, 'chars': {'top': 14, 'transfer': 12, 'disk': 12, 'ping': 11}, 'short': True, 'head': 'AIR', 'rows': 1}
-_DENSEST = {'spacing': 6, 'meter': 0, 'chars': {'top': 11, 'transfer': 11, 'disk': 11, 'ping': 6, 'pump': 5}, 'short': True, 'head': 'AIR', 'rows': 1}
+_NORMAL = {'spacing': 12, 'meter': 70, 'chars': {}, 'short': False, 'head': 'R', 'rows': 1}
+_DENSE = {'spacing': 8, 'meter': 46, 'chars': {'top': 14, 'transfer': 12, 'disk': 12, 'ping': 11}, 'short': True, 'head': 'R', 'rows': 1}
+_DENSEST = {'spacing': 6, 'meter': 0, 'chars': {'top': 11, 'transfer': 11, 'disk': 11, 'ping': 6, 'pump': 5}, 'short': True, 'head': 'R', 'rows': 1}
 # Lieber zwei Zeilen als Werte weglassen: erst dichter, dann zweizeilig (Leiste wird höher).
 DENSITY = (_NORMAL, _DENSE, {**_NORMAL, 'rows': 2}, {**_DENSE, 'rows': 2}, {**_DENSEST, 'rows': 2})
 
@@ -168,6 +168,7 @@ class BarWindow(Gtk.Window):
         outer.set_margin_start(12 if not self.vertical else 10)
         outer.set_margin_end(8)
         head = _label(density['head'], 'eyebrow')
+        head.set_tooltip_text('Restlos Air')
         head.set_valign(Gtk.Align.CENTER)
         surface.pack_start(head, False, False, 0)
         self.items = bar_items(self.owner.settings)

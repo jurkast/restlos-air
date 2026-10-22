@@ -2,6 +2,7 @@
 
 ## 1.6.4 – 2026-10-22
 
+- In der Leiste steht statt „RESTLOS AIR“ nur noch „R“ – mehr Platz für Werte.
 - Leiste zeigt standardmäßig alles: zusätzlich CPU-Takt, GPU-Leistung und Laufwerke.
 - Passt nicht alles in die Monitorbreite, wird die Leiste automatisch dichter (kürzere Einheiten, schmalere Balken) und notfalls zweizeilig – statt über den Bildschirmrand hinauszuragen oder Werte wegzulassen.
 
