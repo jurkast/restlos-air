@@ -19,7 +19,7 @@ class MetricsTests(unittest.TestCase):
         self.drm.mkdir()
 
     def sampler(self):
-        return MetricsSampler(proc_root=self.proc, drm_root=self.drm)
+        return MetricsSampler(proc_root=self.proc, drm_root=self.drm, sys_root=self.proc / "no-sys")
 
     def stat(self, values):
         (self.proc / 'stat').write_text('cpu ' + ' '.join(map(str, values)) + '\ncpu0 999 999 999 999\n')
@@ -44,7 +44,7 @@ class MetricsTests(unittest.TestCase):
 
     def test_absent_data_is_none_and_keys_are_stable(self):
         result = self.sampler().sample()
-        self.assertEqual(set(result), {'cpu_percent', 'gpu_percent', 'ram_used_bytes',
+        self.assertEqual(set(result), {'cpu_percent', 'gpu_percent', 'cpu_clock_mhz', 'disk_read_bytes_sec', 'disk_write_bytes_sec', 'ram_used_bytes',
                          'ram_total_bytes', 'ram_percent', 'vram_used_bytes',
                          'vram_total_bytes', 'vram_percent'})
         self.assertTrue(all(value is None for value in result.values()))
@@ -161,6 +161,32 @@ class MetricsTests(unittest.TestCase):
         self.assertIsNone(result['gpu_percent'])
         self.assertIsNone(result['vram_used_bytes'])
         self.assertIsNone(result['vram_total_bytes'])
+
+
+    def test_disk_rates_cpu_clock_and_counter_reset(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            proc, sys_root = root / 'proc', root / 'sys'
+            proc.mkdir()
+            for core, khz in ((0, 3600000), (1, 4650000)):
+                freq = sys_root / f'devices/system/cpu/cpu{core}/cpufreq'
+                freq.mkdir(parents=True)
+                (freq / 'scaling_cur_freq').write_text(str(khz))
+            def stats(read, write):
+                (proc / 'diskstats').write_text(
+                    f' 259 0 nvme0n1 1 0 {read} 0 1 0 {write} 0 0 0 0\n'
+                    f' 259 1 nvme0n1p1 1 0 {read} 0 1 0 {write} 0 0 0 0\n'
+                    '   7 0 loop0 1 0 999999 0 1 0 999999 0 0 0 0\n')
+            now = [100.0]
+            sampler = MetricsSampler(proc_root=proc, drm_root=root / 'drm', sys_root=sys_root, clock=lambda: now[0])
+            stats(0, 0)
+            self.assertEqual(sampler.sample()['disk_read_bytes_sec'], None)
+            stats(2048, 4096); now[0] = 102.0
+            result = sampler.sample()
+            self.assertEqual((result['disk_read_bytes_sec'], result['disk_write_bytes_sec']), (2048 * 512 / 2, 4096 * 512 / 2))
+            self.assertEqual(result['cpu_clock_mhz'], 4650.0)
+            stats(0, 0); now[0] = 104.0
+            self.assertIsNone(sampler.sample()['disk_read_bytes_sec'])
 
 
 if __name__ == '__main__':

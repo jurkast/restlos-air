@@ -1,5 +1,19 @@
 # Änderungen
 
+## 1.6.0 – 2026-10-22
+
+- **Wer frisst?** Größter Verbraucher in Widget und Leiste, im Studio die Top 5 nach CPU-Last mit RAM und „Beenden“ (nur eigene Programme, Desktop und Audio sind geschützt).
+- **Lüfterprofile** Leise, Normal und Spiel für alle regelbaren Lüfter per Klick in Widget, Leiste oder Studio; jedes erreicht 100 % spätestens bei 85 °C.
+- **Spielmodus automatisch:** Steam-, Lutris- und Heroic-Spiele werden erkannt, das Profil wechselt auf „Spiel“ und eine Minute nach Spielende zurück.
+- **Verlauf:** Spitzenwerte des Tages mit Uhrzeit und laufendem Spiel/Programm, 24-Stunden-Diagramm; sieben Tage lokal gespeichert (~2000 Zeilen).
+- **Staubhinweis:** steigt die Leerlauftemperatur über Wochen um 6 °C, schlägt Air vor, Kühler und Filter zu prüfen.
+- **Mainboard, Takt & Laufwerke:** Mainboard-Sensoren, CPU- und GPU-Takt, GPU-Leistung in Watt, Lesen/Schreiben der Laufwerke.
+- **Mini-Verlaufslinien** der letzten Minute in den Temperaturkacheln.
+- **Leiste zusammenstellen:** Werte per Häkchen wählen und mit ↑/↓ sortieren; neu wählbar: Festplatten, GPU-Watt, CPU-Takt, Wer frisst, Profil, Audio.
+- **Audio in der Leiste:** Klick schaltet den Ton, Mausrad ändert die Lautstärke, Mikrofon per Klick stumm.
+- **Heller Modus** (Dunkel, Hell oder wie das System), Farben wie im Uninstaller.
+- **Tastenkürzel Super+Umschalt+A** blendet Widget oder Leiste ein/aus (wird in den Zorin-/GNOME-Einstellungen angelegt); dazu `restlos-air --toggle`.
+
 ## 1.5.2 – 2026-10-22
 
 - Leiste bleibt fest an der gewählten Kante: Die Seitenleiste wird höchstens breiter, nie schmaler, und rückt bei wechselnden Werten nicht mehr hin und her.
