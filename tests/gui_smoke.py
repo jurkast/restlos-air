@@ -346,7 +346,7 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertEqual(self.window.bar.loads['gpu'].get_text(), '37 %')
         self.assertEqual(self.window.bar.memory['ram'][0].get_text(), '8,0/32 GiB')
         x, y, width, height = self.window.bar.geometry()
-        self.assertEqual(height, 34)
+        self.assertIn(height, range(34, 80))  # one row, or two rows on narrow monitors
         self.window.edge_combo.set_active_id('right')
         self.assertTrue(self.window.bar.vertical)
         self.assertGreaterEqual(self.window.bar.geometry()[2], 124)  # measured; wider system fonts are allowed
@@ -549,9 +549,13 @@ class GuiSmokeTests(unittest.TestCase):
         from processes import ProgramUsage
         self.window.view_combo.set_active_id('bar'); self.window.edge_combo.set_active_id('bottom')
         bar = self.window.bar
-        separators = [child for child in bar.get_child().get_child().get_children()
-                      if isinstance(child, self.Gtk.Separator)]
-        self.assertEqual(len(separators), 6)  # temp | memory | system | cooling | net | audio
+        def walk(widget):
+            yield widget
+            if isinstance(widget, self.Gtk.Container):
+                for child in widget.get_children():
+                    yield from walk(child)
+        separators = [w for w in walk(bar.get_child()) if isinstance(w, self.Gtk.Separator)]
+        self.assertGreaterEqual(len(separators), 5)  # groups: temp | memory | system | cooling | net | audio
         self.window.top = [ProgramUsage('claude-desktop', 1.0, 2**30, 3, True)]
         self.window.update_network({'internet_ms': 21, 'internet_status': 'ok', 'connection': 'wlan', 'signal_percent': 65})
         bar.show_values(self.window)
@@ -559,6 +563,25 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertEqual(bar.texts['ping'].get_text(), '21 ms · 65 %')
         self.assertNotIn('Pumpe', bar.texts['pump'].get_text())
         self.window.view_combo.set_active_id('widget')
+
+
+    def test_all_items_by_default_and_bar_gets_denser_instead_of_overflowing(self):
+        import panels
+        self.assertEqual(set(panels.bar_items({})), {key for key, _ in panels.BAR_ITEMS})
+        self.assertEqual(panels.bar_items({'bar_items': panels.OLD_DEFAULT_BAR_ITEMS}), panels.DEFAULT_BAR_ITEMS)
+        self.assertEqual(panels.bar_items({'bar_items': ['cpu']}), ['cpu'])
+        self.window.view_combo.set_active_id('bar'); self.window.edge_combo.set_active_id('bottom')
+        bar = self.window.bar
+        monitor = bar.area().width
+        try:
+            with patch.object(bar, 'area', return_value=type('Area', (), {'x': 0, 'y': 0, 'width': 1100, 'height': 800})()):
+                bar.rebuild(); bar.place()
+                self.assertGreater(bar.density, 0)
+                self.assertLessEqual(bar.get_child().get_preferred_width()[1], 1100)
+            bar.rebuild()
+            self.assertLessEqual(bar.get_child().get_preferred_width()[1], monitor)
+        finally:
+            self.window.view_combo.set_active_id('widget')
 
 
 if __name__ == '__main__':

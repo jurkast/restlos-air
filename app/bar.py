@@ -22,6 +22,24 @@ METRICS = (('cpu', 'CPU'), ('gpu', 'GPU'), ('hotspot', 'HOT'), ('ssd', 'SSD'))
 # Kurze Überschrift + fetter Wert statt Sätzen wie „Pumpe · 2.323 U/min“; feste Breite gegen Springen.
 CAPTIONS = {'top': ('TOP', 18), 'pump': ('PUMPE', 11), 'ping': ('PING', 12), 'transfer': ('NETZ', 19),
             'disk': ('DISK', 19), 'power': ('GPU', 5), 'clock': ('TAKT', 8)}
+# Dichte-Stufen, wenn nicht alles in die Monitorbreite passt: Abstand, Balkenbreite, Feldbreiten.
+_NORMAL = {'spacing': 12, 'meter': 70, 'chars': {}, 'short': False, 'head': 'RESTLOS AIR', 'rows': 1}
+_DENSE = {'spacing': 8, 'meter': 46, 'chars': {'top': 14, 'transfer': 12, 'disk': 12, 'ping': 11}, 'short': True, 'head': 'AIR', 'rows': 1}
+_DENSEST = {'spacing': 6, 'meter': 0, 'chars': {'top': 11, 'transfer': 11, 'disk': 11, 'ping': 6, 'pump': 5}, 'short': True, 'head': 'AIR', 'rows': 1}
+# Lieber zwei Zeilen als Werte weglassen: erst dichter, dann zweizeilig (Leiste wird höher).
+DENSITY = (_NORMAL, _DENSE, {**_NORMAL, 'rows': 2}, {**_DENSE, 'rows': 2}, {**_DENSEST, 'rows': 2})
+
+
+def short_rate(value) -> str:
+    """Bytes per second without the unit text: 1,0M, 4K, 512."""
+    from air_studio import de
+    if value is None:
+        return '—'
+    if value >= 1024**2:
+        return de(value / 1024**2) + 'M'
+    if value >= 1024:
+        return f'{value / 1024:.0f}K'
+    return f'{value:.0f}'
 # Zusammengehörige Werte bilden Gruppen; zwischen Gruppen steht eine dünne Trennlinie.
 GROUPS = {'cpu': 'temp', 'gpu': 'temp', 'hotspot': 'temp', 'ssd': 'temp', 'ram': 'memory', 'vram': 'memory',
           'top': 'system', 'profile': 'cooling', 'pump': 'cooling', 'power': 'system', 'clock': 'system',
@@ -92,6 +110,7 @@ class BarWindow(Gtk.Window):
         # Breite der Seitenleiste wächst höchstens, schrumpft nie: sonst rückt die rechte
         # Leiste bei jeder Wertänderung ein paar Pixel hin und her.
         self.locked_width = 0
+        self.density = 0
         self.set_decorated(False)
         self.set_resizable(False)
         self.set_skip_taskbar_hint(True)
@@ -113,6 +132,7 @@ class BarWindow(Gtk.Window):
     def rebuild(self) -> None:
         """Rebuild after the item selection changed; keeps the edge."""
         self.locked_width = 0
+        self.density = 0
         self.build()
         if self.get_visible():
             self.place()
@@ -128,14 +148,26 @@ class BarWindow(Gtk.Window):
         events.set_tooltip_text('Klicken öffnet Air Studio')
         events.connect('button-press-event', self.clicked)
         self.add(events)
-        surface = Gtk.Box(orientation=Gtk.Orientation.VERTICAL if self.vertical else Gtk.Orientation.HORIZONTAL,
-                          spacing=8 if self.vertical else 12)
-        events.add(surface)
+        density = DENSITY[0 if self.vertical else self.density]
+        two_rows = density['rows'] == 2 and not self.vertical
+        rows = []
+        for _ in range(2 if two_rows else 1):
+            rows.append(Gtk.Box(orientation=Gtk.Orientation.VERTICAL if self.vertical else Gtk.Orientation.HORIZONTAL,
+                                spacing=8 if self.vertical else density['spacing']))
+        if two_rows:
+            outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+            for row in rows:
+                row.set_size_request(-1, THICKNESS - 4)
+                outer.pack_start(row, False, False, 0)
+        else:
+            outer = rows[0]
+        events.add(outer)
+        surface = rows[0]
         for setter in ('set_margin_top', 'set_margin_bottom', 'set_margin_start', 'set_margin_end'):
-            getattr(surface, setter)(10 if self.vertical else 0)
-        surface.set_margin_start(12 if not self.vertical else 10)
-        surface.set_margin_end(8)
-        head = _label('RESTLOS AIR', 'eyebrow')
+            getattr(outer, setter)(10 if self.vertical else 2 if two_rows else 0)
+        outer.set_margin_start(12 if not self.vertical else 10)
+        outer.set_margin_end(8)
+        head = _label(density['head'], 'eyebrow')
         head.set_valign(Gtk.Align.CENTER)
         surface.pack_start(head, False, False, 0)
         self.items = bar_items(self.owner.settings)
@@ -143,7 +175,11 @@ class BarWindow(Gtk.Window):
         self.profile_button = self.audio_button = self.mic_button = None
         titles = dict(METRICS)
         group = 'head'
-        for key in self.items:
+        split = (len(self.items) + 1) // 2 if two_rows else None
+        for index, key in enumerate(self.items):
+            if index == split:
+                # Zweite Zeile beginnt ohne Trennlinie.
+                surface, group = rows[1], GROUPS.get(key)
             if GROUPS.get(key) != group:
                 separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL if self.vertical else Gtk.Orientation.VERTICAL)
                 separator.get_style_context().add_class('bar-separator')
@@ -175,8 +211,9 @@ class BarWindow(Gtk.Window):
                 line.pack_start(value, False, False, 0)
                 cell.pack_start(line, False, False, 0)
                 bar = self.owner_meter()
-                bar.set_size_request(-1 if self.vertical else 70, -1)
-                cell.pack_start(bar, False, False, 0)
+                bar.set_size_request(-1 if self.vertical else max(density['meter'], 1), -1)
+                if density['meter']:
+                    cell.pack_start(bar, False, False, 0)
                 cell.set_valign(Gtk.Align.CENTER)
                 surface.pack_start(cell, False, False, 0)
                 self.memory[key] = (value, bar)
@@ -205,6 +242,7 @@ class BarWindow(Gtk.Window):
                 surface.pack_start(cell, False, False, 0)
             else:
                 caption, chars = CAPTIONS[key]
+                chars = density['chars'].get(key, chars)
                 cell = Gtk.Box(spacing=6)
                 cell.set_valign(Gtk.Align.CENTER)
                 cell.pack_start(_label(caption, 'row-name'), False, False, 0)
@@ -292,11 +330,23 @@ class BarWindow(Gtk.Window):
             width, height = min(max(SIDE_WIDTH, natural, self.locked_width), area.width // 3), area.height
             x = area.x if self.edge == 'left' else area.x + area.width - width
             return x, area.y, width, height
-        height = THICKNESS
+        child = self.get_child()
+        natural = child.get_preferred_height()[1] if child is not None else 0
+        height = max(THICKNESS, natural)
         y = area.y if self.edge == 'top' else area.y + area.height - height
         return area.x, y, area.width, height
 
+    def fit(self) -> None:
+        """Choose the lowest density whose content fits the monitor width."""
+        if self.vertical:
+            return
+        available = self.area().width
+        while self.density < len(DENSITY) - 1 and self.get_child().get_preferred_width()[1] > available:
+            self.density += 1
+            self.build()
+
     def place(self) -> None:
+        self.fit()
         x, y, width, height = self.geometry()
         if self.vertical:
             self.locked_width = width
@@ -353,6 +403,10 @@ class BarWindow(Gtk.Window):
             percent = metrics.get(key + '_percent')
             bar.set_value(0 if percent is None else max(0, min(100, percent)) / 100)
         gap = '\n' if self.vertical else '  '
+        short = not self.vertical and DENSITY[self.density]['short']
+        speed = short_rate if short else rate
+        if short:
+            gap = ' '
         network = source.network_state or {}
         extras = source.extras or {}
         top = source.top[0] if source.top else None
@@ -361,11 +415,11 @@ class BarWindow(Gtk.Window):
         offline = network.get('internet_status') in ('no_route', 'disconnected')
         values = {
             'top': '—' if top is None else f'{top.name} {top.cpu_percent:.0f} %',
-            'pump': source.mini_pump.get_text().split(' · ', 1)[-1],
+            'pump': source.mini_pump.get_text().split(' · ', 1)[-1].replace(' U/min', '' if DENSITY[self.density]['meter'] == 0 else ' U/min'),
             'ping': ('offline' if offline else '—' if ping is None else f'{ping:.0f} ms')
-                    + ('' if signal is None or network.get('connection') != 'wlan' else f' · {signal:.0f} %'),
-            'transfer': f"↓ {rate(network.get('rx_bytes_sec'))}{gap}↑ {rate(network.get('tx_bytes_sec'))}",
-            'disk': f"R {rate(metrics.get('disk_read_bytes_sec'))}{gap}W {rate(metrics.get('disk_write_bytes_sec'))}",
+                    + ('' if signal is None or network.get('connection') != 'wlan' or DENSITY[self.density]['meter'] == 0 else f' · {signal:.0f} %'),
+            'transfer': f"↓ {speed(network.get('rx_bytes_sec'))}{gap}↑ {speed(network.get('tx_bytes_sec'))}",
+            'disk': f"R {speed(metrics.get('disk_read_bytes_sec'))}{gap}W {speed(metrics.get('disk_write_bytes_sec'))}",
             'power': '—' if extras.get('gpu_power_w') is None else f"{extras['gpu_power_w']:.0f} W",
             'clock': '—' if not metrics.get('cpu_clock_mhz') else f"{de(metrics['cpu_clock_mhz'] / 1000)} GHz",
         }

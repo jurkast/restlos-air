@@ -16,13 +16,16 @@ BAR_ITEMS = (
     ('ping', 'Ping und WLAN'), ('transfer', 'Datenrate Netzwerk'), ('disk', 'Festplatten lesen/schreiben'),
     ('power', 'GPU-Leistung in Watt'), ('clock', 'CPU-Takt'), ('audio', 'Lautstärke und Mikrofon'),
 )
-DEFAULT_BAR_ITEMS = ['cpu', 'gpu', 'hotspot', 'ssd', 'ram', 'vram', 'top', 'profile', 'pump', 'ping', 'transfer', 'audio']
+# Standard: alles. Die Leiste wird bei Platzmangel automatisch dichter (siehe bar.DENSITY).
+DEFAULT_BAR_ITEMS = ['cpu', 'gpu', 'hotspot', 'ssd', 'ram', 'vram', 'top', 'clock', 'power', 'disk',
+                     'profile', 'pump', 'ping', 'transfer', 'audio']
+OLD_DEFAULT_BAR_ITEMS = ['cpu', 'gpu', 'hotspot', 'ssd', 'ram', 'vram', 'top', 'profile', 'pump', 'ping', 'transfer', 'audio']
 
 
 def bar_items(settings: dict) -> list[str]:
     known = {key for key, _ in BAR_ITEMS}
     chosen = settings.get('bar_items')
-    if not isinstance(chosen, list):
+    if not isinstance(chosen, list) or chosen == OLD_DEFAULT_BAR_ITEMS:
         return list(DEFAULT_BAR_ITEMS)
     return [key for key in dict.fromkeys(chosen) if key in known]
 
