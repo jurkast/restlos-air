@@ -95,6 +95,7 @@ button.profile-pill:hover { border-color: #6ce0c3; }
 #bar-surface.bar-left { border-right: 1px solid #2b404b; }
 #bar-surface.bar-right { border-left: 1px solid #2b404b; }
 .bar-value { font-size: 14px; font-weight: 800; }
+separator.bar-separator { background-color: #2b404b; min-width: 1px; min-height: 1px; }
 '''
 
 

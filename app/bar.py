@@ -19,6 +19,13 @@ EDGE_TITLES = {'bottom': 'Unten', 'top': 'Oben', 'left': 'Links', 'right': 'Rech
 THICKNESS = 34
 SIDE_WIDTH = 124
 METRICS = (('cpu', 'CPU'), ('gpu', 'GPU'), ('hotspot', 'HOT'), ('ssd', 'SSD'))
+# Kurze Überschrift + fetter Wert statt Sätzen wie „Pumpe · 2.323 U/min“; feste Breite gegen Springen.
+CAPTIONS = {'top': ('TOP', 18), 'pump': ('PUMPE', 11), 'ping': ('PING', 12), 'transfer': ('NETZ', 19),
+            'disk': ('DISK', 19), 'power': ('GPU', 5), 'clock': ('TAKT', 8)}
+# Zusammengehörige Werte bilden Gruppen; zwischen Gruppen steht eine dünne Trennlinie.
+GROUPS = {'cpu': 'temp', 'gpu': 'temp', 'hotspot': 'temp', 'ssd': 'temp', 'ram': 'memory', 'vram': 'memory',
+          'top': 'system', 'profile': 'cooling', 'pump': 'cooling', 'power': 'system', 'clock': 'system',
+          'disk': 'system', 'ping': 'net', 'transfer': 'net', 'audio': 'audio'}
 
 
 def set_strut(xid: int, values: list[int]) -> bool:
@@ -111,19 +118,6 @@ class BarWindow(Gtk.Window):
             self.place()
             self.apply_strut()
 
-    def _info(self, text: str, chars: int) -> Gtk.Label:
-        item = _label(text, 'info')
-        item.set_valign(Gtk.Align.CENTER)
-        if self.vertical:
-            # Schmale Seitenleiste: umbrechen statt abschneiden.
-            item.set_line_wrap(True)
-            item.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
-            item.set_max_width_chars(14)
-        else:
-            item.set_ellipsize(Pango.EllipsizeMode.END)
-            item.set_width_chars(chars)  # Mindestbreite statt „…“
-        return item
-
     def build(self) -> None:
         from panels import bar_items
         for child in self.get_children():
@@ -135,7 +129,7 @@ class BarWindow(Gtk.Window):
         events.connect('button-press-event', self.clicked)
         self.add(events)
         surface = Gtk.Box(orientation=Gtk.Orientation.VERTICAL if self.vertical else Gtk.Orientation.HORIZONTAL,
-                          spacing=10 if self.vertical else 16)
+                          spacing=8 if self.vertical else 12)
         events.add(surface)
         for setter in ('set_margin_top', 'set_margin_bottom', 'set_margin_start', 'set_margin_end'):
             getattr(surface, setter)(10 if self.vertical else 0)
@@ -148,15 +142,26 @@ class BarWindow(Gtk.Window):
         self.temps, self.loads, self.memory, self.texts = {}, {}, {}, {}
         self.profile_button = self.audio_button = self.mic_button = None
         titles = dict(METRICS)
+        group = 'head'
         for key in self.items:
+            if GROUPS.get(key) != group:
+                separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL if self.vertical else Gtk.Orientation.VERTICAL)
+                separator.get_style_context().add_class('bar-separator')
+                if not self.vertical:
+                    separator.set_margin_top(8)
+                    separator.set_margin_bottom(8)
+                surface.pack_start(separator, False, False, 0)
+                group = GROUPS.get(key)
             if key in titles:
                 cell = Gtk.Box(spacing=6)
                 cell.pack_start(_label(titles[key], 'row-name'), False, False, 0)
                 value = _label('—', 'bar-value')
+                value.set_width_chars(3)  # Breite hängt nicht vom Wert ab: Leiste springt nicht
                 cell.pack_start(value, False, False, 0)
                 self.temps[key] = value
                 if key in ('cpu', 'gpu'):
                     load = _label('', 'info')
+                    load.set_width_chars(4)
                     cell.pack_start(load, False, False, 0)
                     self.loads[key] = load
                 cell.set_valign(Gtk.Align.CENTER)
@@ -166,6 +171,7 @@ class BarWindow(Gtk.Window):
                 line = Gtk.Box(spacing=6)
                 line.pack_start(_label(key.upper(), 'row-name'), False, False, 0)
                 value = _label('—', 'row-value')
+                value.set_width_chars(10)
                 line.pack_start(value, False, False, 0)
                 cell.pack_start(line, False, False, 0)
                 bar = self.owner_meter()
@@ -198,9 +204,21 @@ class BarWindow(Gtk.Window):
                 cell.pack_start(self.mic_button, False, False, 0)
                 surface.pack_start(cell, False, False, 0)
             else:
-                chars = {'top': 22, 'pump': 18, 'ping': 14, 'transfer': 17, 'disk': 18, 'power': 9, 'clock': 11}[key]
-                self.texts[key] = self._info('—', chars)
-                surface.pack_start(self.texts[key], False, False, 0)
+                caption, chars = CAPTIONS[key]
+                cell = Gtk.Box(spacing=6)
+                cell.set_valign(Gtk.Align.CENTER)
+                cell.pack_start(_label(caption, 'row-name'), False, False, 0)
+                value = _label('—', 'row-value')
+                if self.vertical:
+                    value.set_line_wrap(True)
+                    value.set_width_chars(11)
+                    value.set_max_width_chars(11)
+                else:
+                    value.set_width_chars(chars)
+                    value.set_ellipsize(Pango.EllipsizeMode.END)
+                cell.pack_start(value, False, False, 0)
+                self.texts[key] = value
+                surface.pack_start(cell, False, False, 0)
         tail = Gtk.Box(spacing=6)
         tail.set_valign(Gtk.Align.CENTER if not self.vertical else Gtk.Align.END)
         self.pill = _label('LIVE', 'pill')
@@ -334,20 +352,29 @@ class BarWindow(Gtk.Window):
             label.set_text('—' if used is None or total is None else f'{de(used / 2**30)}/{de(total / 2**30, 0)} GiB')
             percent = metrics.get(key + '_percent')
             bar.set_value(0 if percent is None else max(0, min(100, percent)) / 100)
-        separator = '\n' if self.vertical else ' · '
+        gap = '\n' if self.vertical else '  '
         network = source.network_state or {}
         extras = source.extras or {}
+        top = source.top[0] if source.top else None
+        ping = network.get('internet_ms')
+        signal = network.get('signal_percent')
+        offline = network.get('internet_status') in ('no_route', 'disconnected')
         values = {
-            'top': source.top_text(),
-            'pump': source.mini_pump.get_text().replace(' · ', separator),
-            'ping': source.mini_ping.get_text() + ('' if not source.mini_signal.get_text() else separator + source.mini_signal.get_text()),
-            'transfer': f"↓ {rate(network.get('rx_bytes_sec'))}{separator if self.vertical else '  '}↑ {rate(network.get('tx_bytes_sec'))}",
-            'disk': f"SSD R {rate(metrics.get('disk_read_bytes_sec'))}{separator if self.vertical else '  '}W {rate(metrics.get('disk_write_bytes_sec'))}",
-            'power': 'GPU —' if extras.get('gpu_power_w') is None else f"GPU {extras['gpu_power_w']:.0f} W",
-            'clock': 'CPU —' if not metrics.get('cpu_clock_mhz') else f"CPU {de(metrics['cpu_clock_mhz'] / 1000)} GHz",
+            'top': '—' if top is None else f'{top.name} {top.cpu_percent:.0f} %',
+            'pump': source.mini_pump.get_text().split(' · ', 1)[-1],
+            'ping': ('offline' if offline else '—' if ping is None else f'{ping:.0f} ms')
+                    + ('' if signal is None or network.get('connection') != 'wlan' else f' · {signal:.0f} %'),
+            'transfer': f"↓ {rate(network.get('rx_bytes_sec'))}{gap}↑ {rate(network.get('tx_bytes_sec'))}",
+            'disk': f"R {rate(metrics.get('disk_read_bytes_sec'))}{gap}W {rate(metrics.get('disk_write_bytes_sec'))}",
+            'power': '—' if extras.get('gpu_power_w') is None else f"{extras['gpu_power_w']:.0f} W",
+            'clock': '—' if not metrics.get('cpu_clock_mhz') else f"{de(metrics['cpu_clock_mhz'] / 1000)} GHz",
         }
+        tips = {'top': source.top_text() + ' · Details im Studio', 'ping': 'Ping zu 1.1.1.1' + (' · WLAN-Signal' if signal is not None else ''),
+                'pump': 'Drehzahl der Wasserpumpe', 'transfer': 'Empfang / Versand der aktiven Verbindung',
+                'disk': 'Laufwerke lesen / schreiben', 'power': 'Leistungsaufnahme der Grafikkarte', 'clock': 'Höchster CPU-Kerntakt'}
         for key, label in self.texts.items():
             label.set_text(values[key])
+            label.get_parent().set_tooltip_text(tips[key])
         if self.profile_button is not None:
             self.profile_button.set_label(profiles.title(source.profile).upper())
             self.profile_button.set_sensitive(not source.backend_busy)

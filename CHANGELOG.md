@@ -1,5 +1,11 @@
 # Änderungen
 
+## 1.6.3 – 2026-10-22
+
+- Leiste übersichtlicher: Werte in Gruppen (Temperaturen | Speicher | Top | Kühlung | Netz | Audio) mit dünnen Trennlinien.
+- Kurze Überschrift + fetter Wert statt Sätzen: „PUMPE 2.323 U/min“, „PING 21 ms · 65 %“, „TOP claude-desktop 1 %“. Details stehen im Tooltip.
+- Feste Feldbreiten: nichts wird mehr zu „…“ abgeschnitten, und die Leiste verändert ihre Breite nicht mehr mit den Werten.
+
 ## 1.6.2 – 2026-10-22
 
 - Fehler: Mit „Lautstärke und Mikrofon“ in der Leiste startete das Audio-Fenster sich beim Starten immer wieder selbst (Endlosschleife). Dadurch blieben Widget und Leiste ohne Werte. Das Audio wird jetzt genau einmal gestartet.
