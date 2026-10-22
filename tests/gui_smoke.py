@@ -392,5 +392,32 @@ class GuiSmokeTests(unittest.TestCase):
         self.window.view_combo.set_active_id('widget')
 
 
+    def test_chosen_edge_stays_fixed_and_survives_restart(self):
+        self.window.view_combo.set_active_id('bar'); self.window.edge_combo.set_active_id('right')
+        bar = self.window.bar
+        first = bar.geometry()
+        for _ in range(5):
+            self.window.place(); self.window.metrics_last = 0; self.window.update(); self.drain()
+        self.window.reserve_check.set_active(False); self.window.reserve_check.set_active(True)
+        self.assertEqual(bar.geometry(), first)
+        self.assertEqual(bar.edge, 'right')
+        # A wider value may widen the side bar once; shorter values never move it back.
+        bar.locked_width = first[2] + 20
+        wider = bar.geometry(); bar.place()
+        self.assertEqual(wider[0] + wider[2], first[0] + first[2])
+        self.assertEqual(bar.geometry(), wider)
+        # Settings reload (restart / update) restores the same edge.
+        self.window.save()
+        reopened = self.air.AirWindow(self.app)
+        try:
+            self.assertEqual(reopened.edge_combo.get_active_id(), 'right')
+            self.assertEqual(reopened.view_combo.get_active_id(), 'bar')
+            reopened.show_view(True)
+            self.assertEqual(reopened.bar.edge, 'right')
+        finally:
+            reopened.view_combo.set_active_id('widget'); reopened.destroy()
+        self.window.view_combo.set_active_id('widget')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
