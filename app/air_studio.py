@@ -251,6 +251,24 @@ class Spark(Gtk.DrawingArea):
 
 
 THEME = {'light': False}
+_REPORTED = set()
+
+
+def report_error(where):
+    """Write a traceback once per place to ~/.local/state/restlos-air/fehler.log and stderr."""
+    import traceback
+    text=traceback.format_exc()
+    key=(where,text.strip().splitlines()[-1])
+    if key in _REPORTED:return
+    _REPORTED.add(key)
+    sys.stderr.write(f'Restlos Air · Fehler in {where}:\n{text}')
+    try:
+        base=Path(os.environ.get('XDG_STATE_HOME',str(Path.home()/'.local/state')))/'restlos-air'
+        base.mkdir(parents=True,exist_ok=True)
+        with (base/'fehler.log').open('a',encoding='utf-8') as stream:
+            stream.write(time.strftime('%Y-%m-%d %H:%M:%S')+f' {__version__} {where}\n{text}\n')
+    except OSError:
+        pass
 
 
 def SETTINGS_THEME():
@@ -688,7 +706,8 @@ class AirWindow(Gtk.ApplicationWindow):
             # Audio in der Leiste braucht den Audiodienst auch bei ausgeblendetem Audio-Widget.
             if 'audio' in self.bar.items and hasattr(app,'ensure_audio') and not app.audio_window:
                 app.ensure_audio()
-            self.bar.show_values(self)
+            try:self.bar.show_values(self)
+            except Exception:report_error('Leiste')
 
     def refresh_bar_hint(self):
         visible=self.bar_visible()
@@ -814,6 +833,15 @@ class AirWindow(Gtk.ApplicationWindow):
         self.curve_note.set_text(text)
 
     def update(self):
+        # Ein Fehler in einer Zusatzfunktion darf die Anzeige nie anhalten: GLib beendet einen
+        # Timer, dessen Callback eine Ausnahme wirft – dann blieben alle Werte stehen.
+        try:
+            return self.refresh_values()
+        except Exception:
+            report_error('Anzeige')
+            return True
+
+    def refresh_values(self):
         now=time.monotonic()
         hidden=not self.get_visible() and not self.bar_visible() and hasattr(self,'latest')
         curves=not hidden and not self.compact and now-self.curve_last>=5
@@ -824,7 +852,8 @@ class AirWindow(Gtk.ApplicationWindow):
             self.latest['fans']=self.fan_cache
         # Überhitzung muss auch bei ausgeblendetem Widget gemeldet werden.
         self.check_alarms()
-        self.background_tasks(now,hidden)
+        try:self.background_tasks(now,hidden)
+        except Exception:report_error('Hintergrundaufgaben')
         if hidden:return True
         for key in self.sparks:self.sparks[key].append(self.latest.get(key))
         if now-self.backend_last>=10 and not self.backend_busy:
@@ -845,7 +874,7 @@ class AirWindow(Gtk.ApplicationWindow):
         if now-self.extras_last>=2 and (not self.compact or self.bar_visible()):
             self.extras_last=now
             try:self.extras=read_extras()
-            except OSError:self.extras={}
+            except Exception:self.extras={};report_error('Mainboard-Sensoren')
             if not self.compact:self.board_panel.refresh(self.extras,self.metrics_state)
         self.mini_top.set_text(self.top_text(short=True));self.mini_top.set_tooltip_text(self.top_text()+' · Details im Studio')
         if self.compact:

@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.6.1 – 2026-10-22
+
+- Fehler: Löste eine Zusatzfunktion einmal eine Ausnahme aus, hielt GTK die sekündliche Messung an und Widget/Leiste zeigten keine Werte mehr. Die Messung läuft jetzt in jedem Fall weiter; Fehler landen in `~/.local/state/restlos-air/fehler.log`.
+
 ## 1.6.0 – 2026-10-22
 
 - **Wer frisst?** Größter Verbraucher in Widget und Leiste, im Studio die Top 5 nach CPU-Last mit RAM und „Beenden“ (nur eigene Programme, Desktop und Audio sind geschützt).

@@ -500,5 +500,15 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertTrue(self.window.get_visible())
 
 
+    def test_a_failing_extra_never_stops_the_values(self):
+        with patch.object(self.window, 'background_tasks', side_effect=RuntimeError('kaputt')):
+            self.assertTrue(self.window.update())
+        self.assertEqual(self.window.mini_temps['cpu'].get_text(), '41°')
+        with patch.object(self.window, 'refresh_values', side_effect=RuntimeError('ganz kaputt')):
+            self.assertTrue(self.window.update())
+        log = Path(os.environ['XDG_STATE_HOME']) / 'restlos-air' / 'fehler.log'
+        self.assertIn('kaputt', log.read_text())
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
