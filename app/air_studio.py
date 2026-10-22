@@ -511,6 +511,7 @@ class AirWindow(Gtk.ApplicationWindow):
         view.attach(self.edge_combo,1,1,1,1)
         self.reserve_check=Gtk.CheckButton(label='Platz freihalten (maximierte Fenster enden an der Leiste)')
         self.reserve_check.set_active(self.settings.get('bar_reserve',True) is not False);view.attach(self.reserve_check,1,2,1,1)
+        self.bar_hint=label('','muted');self.bar_hint.set_line_wrap(True);self.bar_hint.set_no_show_all(True);view.attach(self.bar_hint,1,3,1,1)
         for widget,signal_name in ((self.view_combo,'changed'),(self.edge_combo,'changed'),(self.reserve_check,'toggled')):
             widget.connect(signal_name,self.view_settings_changed)
         self.view_settings_changed()
@@ -607,9 +608,16 @@ class AirWindow(Gtk.ApplicationWindow):
             self.bar=BarWindow(self,edge,reserve);self.bar.set_application(self.get_application())
         else:self.bar.configure(edge,reserve)
         self.bar.show_bar();self.update();self.push_bar()
+        GLib.idle_add(self.refresh_bar_hint)
 
     def push_bar(self):
         if self.bar_visible():self.bar.show_values(self)
+
+    def refresh_bar_hint(self):
+        blocked=self.bar_visible() and self.bar.reserve and not self.bar.reserve_possible()
+        self.bar_hint.set_text('An dieser Kante schließt dein anderer Monitor an. Dort kann kein Platz freigehalten werden – '
+                               'die Leiste liegt über den Fenstern. Für freien Platz die äußere Kante wählen.' if blocked else '')
+        self.bar_hint.set_visible(blocked)
 
     def hide_views(self):
         self.hide()
@@ -681,7 +689,7 @@ class AirWindow(Gtk.ApplicationWindow):
                 x=max(target.x,min(sx,target.x+target.width-w))
                 y=max(target.y,min(sy,target.y+target.height-max(h,COMPACT_HEIGHT)))
         self.resize(w,h);self.move(x,y)
-        if self.bar_visible():self.bar.place();self.bar.apply_strut()
+        if self.bar_visible():self.bar.place();self.bar.apply_strut();self.refresh_bar_hint()
         return False
 
     def select(self,b,key):

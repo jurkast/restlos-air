@@ -1,5 +1,10 @@
 # Änderungen
 
+## 1.5.1 – 2026-10-22
+
+- Leiste rechts/links: Breite wird gemessen statt fest angenommen; sie ragt nicht mehr über den Bildschirmrand hinaus.
+- Platz freihalten nur noch an äußeren Kanten. Grenzt dort ein anderer Monitor an, hätte die Reservierung den ganzen Nachbarmonitor blockiert; das Studio zeigt jetzt einen Hinweis.
+
 ## 1.5.0 – 2026-10-22
 
 - Neue Ansicht **Leiste**: Restlos Air als Taskleiste oben, unten, links oder rechts am gewählten Bildschirm.
